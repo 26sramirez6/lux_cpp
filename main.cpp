@@ -9,31 +9,36 @@ using namespace std;
 using namespace lux;
 int main()
 {
-  kit::Agent gameState = kit::Agent();
+  kit::Agent game_state = kit::Agent();
   // initialize
-  gameState.initialize();
+  game_state.initialize();
 
   while (true)
   {
     /** Do not edit! **/
     // wait for updates
-    gameState.update();
+    game_state.update();
 
     vector<string> actions = vector<string>();
     
     /** AI Code Goes Below! **/
+		
 
-    Player &player = gameState.players[gameState.id];
-    Player &opponent = gameState.players[(gameState.id + 1) % 2];
+    Player &player = game_state.players[gameState.id];
+    Player &opponent = game_state.players[(gameState.id + 1) % 2];
 
-    GameMap &gameMap = gameState.map;
+    const GameMap &game_map = game_state.map;
+
+		torch::Tensor resources = torch::zeros(
+			{3, game_map.height, game_map.width}, 
+			torch::dtype(torch::kInt32).requires_grad(false));
 
     vector<Cell *> resourceTiles = vector<Cell *>();
-    for (int y = 0; y < gameMap.height; y++)
+    for (int y = 0; y < game_map.height; y++)
     {
-      for (int x = 0; x < gameMap.width; x++)
+      for (int x = 0; x < game_map.width; x++)
       {
-        Cell *cell = gameMap.getCell(x, y);
+        Cell *cell = game_map.getCell(x, y);
         if (cell->hasResource())
         {
           resourceTiles.push_back(cell);
@@ -42,7 +47,7 @@ int main()
     }
 
     // we iterate over all our units and do something with them
-    for (int i = 0; i < player.units.size(); i++)
+    for (int i = 0; i < player.units.sizei
     {
       Unit unit = player.units[i];
       if (unit.isWorker() && unit.canAct())
@@ -113,7 +118,7 @@ int main()
     }
     cout << endl;
     // end turn
-    gameState.end_turn();
+    game_state.end_turn();
   }
 
   return 0;
