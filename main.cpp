@@ -47,7 +47,7 @@ int main()
     }
 
     // we iterate over all our units and do something with them
-    for (int i = 0; i < player.units.sizei
+    for (int i = 0; i < player.units.size(); i++)
     {
       Unit unit = player.units[i];
       if (unit.isWorker() && unit.canAct())

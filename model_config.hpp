@@ -12,8 +12,23 @@ struct BaseModelConfig {};
 
 struct WorkerModelConfig : public BaseModelConfig {
   constexpr static std::size_t ts_ftr_count = 2;
-  constexpr static std::size_t channels = 3;
+  constexpr static std::size_t channels = 5;
   constexpr static std::size_t output_size = 8;
+	enum Channels {
+		WOOD,
+		COAL,
+		URANIUM,
+		PERCENT_TIME_REMAINING,
+		PERCENT_CARGO_REMAINING,
+		CITIES,
+//		ALLY_WORKERS,
+//		ALLY_CARTS,
+//		TIME_TILL_NEXT_NIGHT
+//		ROAD_QUALITY,
+//		CARGO,
+//		RESEARCH
+		Count
+	};
 };
 
 struct CartModelConfig : public BaseModelConfig {

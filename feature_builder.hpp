@@ -4,36 +4,45 @@
 #include "board.hpp"
 #include "board_config.hpp"
 #include "math_util.hpp"
+#include "model_config.hpp"
+#include "lux/kit.hpp"
 #include <torch/torch.h>
 
-
-static torch::Tensor construct_resources(const GameMap &_game_map) {
-	torch::Tensor resources = torch::zeros(
-		{3, _game_map.height, _game_map.width}, 
-		torch::dtype(torch::kInt32).requires_grad(false));
-	
-	auto accessor = resources.accessor<int, 3>();
+template<typename Units, int size>
+static void emplace_resources(
+	const Units &_units,
+	const kit:GameMap &_game_map, 
+	torch::Tensor& geometric_) {	
+	auto accessor = geometric_.accessor<float, 4>();
+	const auto resource_channels = torch::indexing::Slice({0,3,1});
+	geometric_.index_put_({resource_channels}, -1);
 	for (int y = 0; y < _game_map.height; y++) {
 		for (int x = 0; x < _game_map.width; x++) {
-			const Cell *cell = game_map.getCell(x, y);
+			const Cell *cell = _game_map.getCell(x, y);
 			if (cell->hasResource()) {
-				switch (cell->resource.type) {
-				case ResourceType::wood:
-					accessor[0][y][x] = cell->resource.amount; 
-					break;
-				case ResourceType::coal:
-					accessor[1][y][x] = cell->resource.amount; 
-					break;
-				case ResourceType::uranium:
-					accessor[2][y][x] = cell->resource.amount; 
-					break;
+				int i = 0;
+				for (const auto& unit : _units) { 
+					const int shift_y = size / 2 - unit->pos.y;
+					const int shift_x = size / 2 - unit->pos.x;
+
+					switch (cell->resource.type) {
+					case ResourceType::wood:
+						accessor[i++][0][y + shift_y][x + shift_x] = cell->resource.amount; 
+						break;
+					case ResourceType::coal:
+						accessor[i++][1][y + shift_y][x + shift_x] = cell->resource.amount;
+						break;
+					case ResourceType::uranium:
+						accessor[i++][2][y + shift_y][x + shift_x] = cell->resource.amount; 
+						break;
+					}
 				}
-				resourceTiles.push_back(cell);
 			}
 		}
 	}
 	return resources;
 }
+
 
 template <class Derived> struct FeatureBuilder {
 
@@ -43,57 +52,84 @@ template <class Derived> struct FeatureBuilder {
     return spatial;
   }
 
-  template <typename BoardConfig, typename Board, typename StateFeatureType>
-  static void setStateFeatures(const Board &_board, StateFeatureType &ftrs_) {
-    Derived::template setStateFeaturesImpl<BoardConfig, Board,
-                                           StateFeatureType>(_board, ftrs_);
+  template <typename BoardConfig, typename StateFeatureType>
+  static void setStateFeatures(const kit::Agent &_env, StateFeatureType &ftrs_) {
+    Derived::template setStateFeaturesImpl<BoardConfig, StateFeatureType>(_game_map, ftrs_);
   }
 };
 
+
+struct VectorizedUnits {
+	VectorizedUnits(const Player& _player, const int _reserve) {
+		m_workers.reserve(_reserve);
+		m_carts.reserve(_reserve);
+		m_city_tiles.reserve(_reserve);
+		for (int i = 0; i < _player.units.size(); i++) {	
+			if (_player.units[i].isWorker()) {
+				units.m_workers.push_back(&_player.units[i]);
+			} else {
+				units.m_carts.push_back(&_player.units[i]);
+			}
+		}		
+		for (auto& kv : _player.cities) {
+			const auto& ctiles = kv.second.citytiles;
+			for (int i = 0; i < ctiles.size(); i++) {
+				units.m_citytiles.push_back(&ctiles[i]);
+			}
+		} 
+	}
+
+	std::vector<Unit const * const> m_workers;
+	std::vector<Unit const * const> m_carts;
+	std::vector<CityTile const * const> m_city_tiles;
+}
+
 struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
 
-  template <typename BoardConfig, typename Board, typename StateFeatures>
-  static void setStateFeaturesImpl(const Board &_board, StateFeatures &ftrs_) {
+  template <typename BoardConfig, typename StateFeatures>
+  static void setStateFeaturesImpl(const kit::Agent &_env, StateFeatures &ftrs_) {
     torch::NoGradGuard no_grad;
     ftrs_.m_geometric.zero_();
-    // ftrs_.m_temporal.zero_();
+    ftrs_.m_temporal.zero_();
     ftrs_.m_reward_ftrs.m_distances.zero_();
     const float remaining =
-        static_cast<float>(BoardConfig::episode_steps - _board.m_step) /
+        static_cast<float>(BoardConfig::episode_steps - _env.turn) /
         static_cast<float>(BoardConfig::episode_steps);
 
-    // ftrs_.m_temporal.index_put_({torch::indexing::Slice(0,
-    // torch::indexing::None, 1), 0}, remaining);
-    torch::Tensor halite_tensor = _board.getHaliteTensor().reshape(
-        {BoardConfig::size, BoardConfig::size});
+    ftrs_.m_temporal.index_put_({torch::indexing::Slice(0,
+      torch::indexing::None, 1), 0}, remaining);
+		
+		const GameMap &game_map = _env.map;
+		const Player &player = _env.players[_env.id];
+		const Player &opponent = _env.players[(_env.id + 1)%2];
+
+		VectorizedUnits units(player, BoardConfig::size*BoardConfig::size);
+		emplace_resources(game_map, units.m_workers, ftrs_.m_geometric);
+		
     ftrs_.m_geometric.index_put_(
-        {torch::indexing::Slice(0, torch::indexing::None, 1), 2}, remaining);
+        {torch::indexing::Slice(0, torch::indexing::None, 1), 4}, remaining);
 
-    const float max_halite_cell = halite_tensor.max().item().to<float>();
-    const float min_halite_cell = halite_tensor.min().item().to<float>();
-    const float diff_halite = max_halite_cell - min_halite_cell;
-    halite_tensor.sub_(min_halite_cell);
-    halite_tensor.div_(diff_halite);
-    halite_tensor.mul_(2);
-    halite_tensor.sub_(1);
+		min_max_norm(ftrs_.m_geometric.index({torch::indexing::Slice(0, torch::indexing::None, 1), 0}) , 1.f, true);
+		if (player.researchedCoal()) {
+			min_max_norm(ftrs_.m_geometric.index({torch::indexing::Slice(0, torch::indexing::None, 1), 1}) , 1.f, true);
+		} else {
+			ftrs_.m_geometric.index({torch::indexing::Slice(0, torch::indexing::None, 1), 1}).fill_(0.f);
+		}
 
-    const unsigned ship_count = _board.getShipCount();
-    const unsigned shipyard_count = _board.getShipyardCount();
-    const auto &map = _board.getShipMap();
-    int ship_index = 0;
+		if (player.researchedUranium()) { 
+			min_max_norm(ftrs_.m_geometric.index({torch::indexing::Slice(0, torch::indexing::None, 1), 2}) , 1.f, true);
+		} else {
+			ftrs_.m_geometric.index({torch::indexing::Slice(0, torch::indexing::None, 1), 2}).fill_(0.f);
+		}
 
-    for (const auto &kv : map) {
-      const auto &ship = kv.second;
-      const int shift1 = BoardConfig::size / 2 - ship.x;
-      const int shift2 = ship.y - BoardConfig::size / 2;
+		const int worker_count = units.m_workers.size();
+		const int city_count = units.m_citytiles.size();
+    torch::Tensor worker_cargo(torch::zeros({worker_count}, torch::dtype(torch::kFloat32).requires_grad(false)));
 
-      auto rolled_halite_tensor =
-          torch::roll(halite_tensor, {shift1, shift2}, {1, 0});
-      ftrs_.m_geometric.index_put_({ship_index++, 0}, rolled_halite_tensor);
-    }
-
-    torch::Tensor ship_cargo(torch::zeros({ship_count}));
-    _board.getShipCargo(ship_cargo);
+		auto accessor = worker_cargo.accessor<float,1>();
+		for (int i = 0; i < worker_count; ++i) {
+			accessor[i] = static_cast<float>(units.m_workers[i]->getCargoSpaceLeft()) / static_cast<float>(BoardConfig::worker_max_cargo);
+		}
 
     if (shipyard_count > 0 && ship_count > 0) {
       torch::Tensor ship_positions(
@@ -126,9 +162,6 @@ struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
                         ship_count})
               .min(2));
 
-      //                ftrs_.m_reward_ftrs.m_distances.index_put_(
-      //                        {torch::indexing::Slice(0, ship_count, 1)},
-      //                        std::get<0>(distances.reshape(BoardConfig::size*BoardConfig::size).min(0)));
 
       const auto heats = 1 / (distances + 1);
 
@@ -145,14 +178,6 @@ struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
           (1 - remaining) * flipped_heats *
               (((1 + ship_cargo) / max_halite_cell).unsqueeze(1).unsqueeze(1)));
     }
-
-    //        if (ship_count > 0) {
-    //            ftrs_.m_temporal.index_put_(
-    //                {torch::indexing::Slice(0,ship_count,1), 1},
-    //                ship_cargo / BoardConfig::starting_halite);
-    //	    min_max_norm(ftrs_.m_temporal.index({torch::indexing::Slice(0,ship_count,1),
-    //1}), -1.f, true);
-    //        }
   }
 };
 
