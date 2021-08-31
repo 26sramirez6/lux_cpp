@@ -10,6 +10,7 @@
 #include "game_objects.hpp"
 #include "annotate.hpp"
 #include "city.hpp"
+#include "client.hpp"
 namespace kit
 {
     using namespace std;

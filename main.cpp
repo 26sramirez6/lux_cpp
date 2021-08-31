@@ -1,5 +1,6 @@
 #include "lux/kit.hpp"
 #include "lux/define.cpp"
+#include "lux/client.hpp"
 #include <string.h>
 #include <vector>
 #include <set>
@@ -12,33 +13,29 @@ int main()
   kit::Agent game_state = kit::Agent();
   // initialize
   game_state.initialize();
-
+	char * membuf = initialize_memory_map();
   while (true)
   {
     /** Do not edit! **/
     // wait for updates
-    game_state.update();
+    game_state.update(membuf);
 
     vector<string> actions = vector<string>();
     
     /** AI Code Goes Below! **/
 		
 
-    Player &player = game_state.players[gameState.id];
-    Player &opponent = game_state.players[(gameState.id + 1) % 2];
+    Player &player = game_state.players[game_state.id];
+    Player &opponent = game_state.players[(game_state.id + 1) % 2];
 
     const GameMap &game_map = game_state.map;
 
-		torch::Tensor resources = torch::zeros(
-			{3, game_map.height, game_map.width}, 
-			torch::dtype(torch::kInt32).requires_grad(false));
-
-    vector<Cell *> resourceTiles = vector<Cell *>();
+    vector<Cell *> resourceTiles;
     for (int y = 0; y < game_map.height; y++)
     {
       for (int x = 0; x < game_map.width; x++)
       {
-        Cell *cell = game_map.getCell(x, y);
+        Cell *cell = (Cell*)game_map.getCell(x, y);
         if (cell->hasResource())
         {
           resourceTiles.push_back(cell);
