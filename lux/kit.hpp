@@ -90,15 +90,16 @@ namespace kit
          * Updates agent's own known state of `Match`.
          * User should edit this according to their `Design`.
          */
-        void update()
+        void update(char * membuf_)
         {
+						std::cout << "update: " << membuf_ << std::endl;
             this->turn++;
             resetPlayerStates();
             this->map = lux::GameMap(mapWidth, mapHeight);
 
             while (true)
             {
-                string updateInfo = kit::getline();
+                string updateInfo(membuf_);
                 if (updateInfo == INPUT_CONSTANTS::DONE)
                 {
                     break;

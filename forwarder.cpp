@@ -1,6 +1,7 @@
 #include "lux/kit.hpp"
 #include "lux/define.cpp"
 #include "lux/client.hpp"
+#include "server.hpp"
 #include <sstream>
 #include <unistd.h>
 #include <string.h>
@@ -8,53 +9,16 @@
 #include <set>
 #include <stdio.h>
 
-using namespace std;
-using namespace lux;
-static string getline()
-{
-		// exit if stdin is bad now
-		if (!std::cin.good())
-				exit(0);
-
-		char str[2048], ch;
-		int i = 0;
-		ch = getchar();
-		while (ch != '\n')
-		{
-				str[i] = ch;
-				i++;
-				ch = getchar();
-		}
-
-		str[i] = '\0';
-		// return the line
-		return string(str);
-}
-
-std::ostream& operator<< (std::ostream& out, std::istream& in)
-{
-    in >> std::noskipws;
-    char c;
-    in >> c;
-
-    while (in)
-    {
-        out << c;
-        in >> c;
-    }
-
-    return out;
-}
-
 
 int main()
 {
 	char * membuf = locate_memory_map();
 	while (true) {
-		std::string update = getline();
+		std::string update = kit::getline();
+		std::cout << "forwarder: sending "<< update << std::endl;
 		strcpy(membuf, update.c_str());
-		while (*membuf != '!') {}	
-		std::cout << "response received" << std::endl;
+		while (*membuf != ack) {}	
+		std::cout << "ack received" << std::endl;
 	}
 
 //  kit::Agent game_state = kit::Agent();
