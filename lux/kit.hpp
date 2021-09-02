@@ -35,6 +35,25 @@ namespace kit
         return string(str);
     }
 
+    static string getline(char * &membuf_)
+    {
+				std::cout << "getline: " << membuf_ << std::endl;
+        char str[2048], ch;
+        int i = 0;
+        ch = *membuf_;
+        while (ch != '\n')
+        {
+            str[i] = ch;
+            i++;
+						membuf_++;
+            ch = *membuf_;
+        }
+
+        str[i] = '\0';
+        // return the line
+        return string(str);
+    }
+
     static vector<string> tokenize(string s, string del = " ")
     {
         vector<string> strings = vector<string>();
@@ -85,25 +104,108 @@ namespace kit
             cout << "D_FINISH" << std::endl
                  << std::flush;
         }
+				
 
-        /**
-         * Updates agent's own known state of `Match`.
-         * User should edit this according to their `Design`.
-         */
-        void update(char * membuf_)
-        {
-						std::cout << "update: " << membuf_ << std::endl;
+				void updateClient() {
             this->turn++;
             resetPlayerStates();
             this->map = lux::GameMap(mapWidth, mapHeight);
-
             while (true)
             {
-                string updateInfo(membuf_);
+                string updateInfo = getline();
                 if (updateInfo == INPUT_CONSTANTS::DONE)
                 {
                     break;
                 }
+                vector<string> updates = kit::tokenize(updateInfo, " ");
+                string input_identifier = updates[0];
+                if (input_identifier == INPUT_CONSTANTS::RESEARCH_POINTS)
+                {
+                    int team = stoi(updates[1]);
+                    this->players[team].researchPoints = stoi(updates[2]);
+                }
+                else if (input_identifier == INPUT_CONSTANTS::RESOURCES)
+                {
+                    string type = updates[1];
+                    int x = stoi(updates[2]);
+                    int y = stoi(updates[3]);
+                    int amt = stoi(updates[4]);
+                    lux::ResourceType rtype = lux::ResourceType(type.at(0));
+                    this->map._setResource(rtype, x, y, amt);
+                }
+                else if (input_identifier == INPUT_CONSTANTS::UNITS)
+                {
+                    int i = 1;
+                    int unittype = stoi(updates[i++]);
+                    int team = stoi(updates[i++]);
+                    string unitid = updates[i++];
+                    int x = stoi(updates[i++]);
+                    int y = stoi(updates[i++]);
+                    float cooldown = stof(updates[i++]);
+                    int wood = stoi(updates[i++]);
+                    int coal = stoi(updates[i++]);
+                    int uranium = stoi(updates[i++]);
+                    lux::Unit unit = lux::Unit(team, unittype, unitid, x, y, cooldown, wood, coal, uranium);
+                    this->players[team].units.push_back(unit);
+                }
+                else if (input_identifier == INPUT_CONSTANTS::CITY)
+                {
+                    int i = 1;
+                    int team = stoi(updates[i++]);
+                    string cityid = updates[i++];
+                    float fuel = stof(updates[i++]);
+                    float lightUpkeep = stof(updates[i++]);
+                    this->players[team].cities[cityid] = lux::City(team, cityid, fuel, lightUpkeep);
+                }
+                else if (input_identifier == INPUT_CONSTANTS::CITY_TILES)
+                {
+                    int i = 1;
+                    int team = stoi(updates[i++]);
+                    string cityid = updates[i++];
+                    int x = stoi(updates[i++]);
+                    int y = stoi(updates[i++]);
+                    float cooldown = stof(updates[i++]);
+                    lux::City * city = &players[team].cities[cityid];
+                    city->addCityTile(x, y, cooldown);
+                    players[team].cityTileCount += 1;
+                }
+                else if (input_identifier == INPUT_CONSTANTS::ROADS)
+                {
+                    int i = 1;
+                    int x = stoi(updates[i++]);
+                    int y = stoi(updates[i++]);
+                    float road = stof(updates[i++]);
+                    lux::Cell * cell = this->map.getCell(x, y);
+                    cell->road = road;
+                }
+            }
+            for (lux::Player &player : players)
+            {
+                for (auto &element : player.cities)
+                {
+                    lux::City &city = element.second;
+                    for (lux::CityTile &citytile : city.citytiles)
+                    {
+                        const lux::Position &pos = citytile.pos;
+                        map.getCell(pos.x, pos.y)->citytile = &citytile;
+                    }
+                }
+            }
+
+				}
+        /**
+         * Updates agent's own known state of `Match`.
+         * User should edit this according to their `Design`.
+         */
+        void updateServer(char * membuf_)
+        {
+            this->turn++;
+            resetPlayerStates();
+            this->map = lux::GameMap(mapWidth, mapHeight);
+						std::vector<std::string> updates = kit::tokenize(membuf_, "\n");
+						assert(updates[updates.size()-2]==INPUT_CONSTANTS::DONE);
+						for (int i = 0; i < updates.size()-2; i++) {
+								string updateInfo = updates[i];
                 vector<string> updates = kit::tokenize(updateInfo, " ");
                 string input_identifier = updates[0];
                 if (input_identifier == INPUT_CONSTANTS::RESEARCH_POINTS)

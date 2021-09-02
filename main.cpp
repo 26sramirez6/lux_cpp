@@ -13,12 +13,11 @@ int main()
   kit::Agent game_state = kit::Agent();
   // initialize
   game_state.initialize();
-	char * membuf = initialize_memory_map();
   while (true)
   {
     /** Do not edit! **/
     // wait for updates
-    game_state.update(membuf);
+    game_state.updateClient();
 
     vector<string> actions = vector<string>();
     
