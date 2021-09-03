@@ -55,29 +55,31 @@ static std::vector<std::string> build_actions() {
 	return ret;
 }
 
+static char * initialize_memory_map() {
+	int shmid;
+	char *membuf;
+
+	if ((shmid = shmget(key, buf_size, IPC_CREAT | 0666)) < 0) {
+			perror("shmget");
+			exit(1);
+	}
+
+	if ((membuf = (char *)shmat(shmid, NULL, 0)) == (char *) -1) {
+			perror("shmat");
+			exit(1);
+	}
+	return membuf;
+}
+
 main() {
-    char c;
-    int shmid;
-    char *membuf, *s;
-
-    /*
-     * Create the segment.
-     */
-    if ((shmid = shmget(key, buf_size, IPC_CREAT | 0666)) < 0) {
-        perror("shmget");
-        exit(1);
-    }
-
-    /*
-     * Now we attach the segment to our data space.
-     */
-    if ((membuf = (char *)shmat(shmid, NULL, 0)) == (char *) -1) {
-        perror("shmat");
-        exit(1);
-    }
-
+		char *membuf = initialize_memory_map();
 		kit::Agent agent = kit::Agent();
+		HyperParameters hyper_parameters;
+		auto &random_engine = RandomEngine<float, TrainConfig::train_seed>::getInstance();
+		auto trainer = Trainer<BoardConfig::actor_count, TrainConfig::device, decltype(random_engine)>(random_engine); 
+		
 		std::size_t episode = 0;
+		std::size_t frame = 0;
 		while (true) {
 			bool is_new_game = wait_for_next_msg(membuf);
 
@@ -87,9 +89,8 @@ main() {
 				episode = 0;
 				continue;
 			}
-
 			agent.updateServer(membuf);
-
+			trainer.processEpisode(agent);
 			std::vector<std::string> actions = build_actions();
 			send_actions(actions, membuf);
 			std::cout << "sent actions: " << membuf << std::endl;					

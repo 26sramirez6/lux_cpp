@@ -9,13 +9,12 @@
 #define TRAINER_HPP_
 #include "actor.hpp"
 #include "board_config.hpp"
-#include "board_store.hpp"
 #include "dqn.hpp"
 #include "feature_builder.hpp"
 #include "hyper_parameters.hpp"
 #include "math_util.hpp"
 #include "model_config.hpp"
-#include "model_trainer.hpp"
+#include "model_learner.hpp"
 #include "random_engine.hpp"
 #include "replay_buffer.hpp"
 #include "reward_engine.hpp"
@@ -23,134 +22,125 @@
 #include <tuple>
 
 template <typename Board> static inline void pregame_process(Board &board_) {
-  Eigen::ArrayXi start_ship_actions(1);
-  start_ship_actions << 5;
-  Eigen::ArrayXi start_shipyard_actions(1);
-  start_shipyard_actions << 0;
-  board_.setActions(start_ship_actions, start_shipyard_actions);
+  Eigen::ArrayXi start_worker_actions(1);
+  start_worker_actions << 5;
+  Eigen::ArrayXi start_citytile_actions(1);
+  start_citytile_actions << 0;
+  board_.setActions(start_worker_actions, start_citytile_actions);
   board_.step();
-  start_ship_actions(0) = 0;
-  start_shipyard_actions(0) = 1;
-  board_.setActions(start_ship_actions, start_shipyard_actions);
+  start_worker_actions(0) = 0;
+  start_citytile_actions(0) = 1;
+  board_.setActions(start_worker_actions, start_citytile_actions);
   board_.step();
 }
 
-template <unsigned Iterations, unsigned Chunksize, unsigned ActorCount,
+template <std::size_t ActorCount,
           torch::DeviceType DeviceType, typename RandomEngine>
-struct Trainer {
-  using ShipBatch = DynamicBatch<DeviceType, BoardConfig, ShipModelConfig>;
-  using ShipyardBatch =
-      DynamicBatch<DeviceType, BoardConfig, ShipyardModelConfig>;
-  using ShipExample = SingleExample<DeviceType, BoardConfig, ShipModelConfig>;
-  using ShipyardExample =
-      SingleExample<DeviceType, BoardConfig, ShipyardModelConfig>;
-  using ShipReplayBuffer = ReplayBuffer<DeviceType, ShipBatch, ShipExample>;
-  using ShipyardReplayBuffer =
-      ReplayBuffer<DeviceType, ShipyardBatch, ShipyardExample>;
-  using ShipRewardEngine =
-      RewardEngine<DeviceType, BoardConfig, ShipModelConfig>;
-  using ShipyardRewardEngine =
-      RewardEngine<DeviceType, BoardConfig, ShipyardModelConfig>;
+class Trainer {
+  using WorkerBatch = DynamicBatch<DeviceType, BoardConfig, WorkerModelConfig>;
+  using CityTileBatch =
+      DynamicBatch<DeviceType, BoardConfig, CityTileModelConfig>;
+  using WorkerTransition = Transition<DeviceType, BoardConfig, WorkerModelConfig>;
+  using CityTileTransition =
+      Transition<DeviceType, BoardConfig, CityTileModelConfig>;
+  using WorkerReplayBuffer = ReplayBuffer<DeviceType, WorkerBatch, WorkerTransition>;
+  using CityTileReplayBuffer =
+      ReplayBuffer<DeviceType, CityTileBatch, CitytileTransition>;
+  using WorkerRewardEngine =
+      RewardEngine<DeviceType, BoardConfig, WorkerModelConfig>;
+  using CityTileRewardEngine =
+      RewardEngine<DeviceType, BoardConfig, CityTileModelConfig>;
+	using WorkerDQN = BigDQN;
+	using CityTileDQN = SmallDQN;
 
   template <std::size_t ActorId>
   using ActorType =
-      Actor<ActorId, DeviceType, BoardConfig, ShipModelConfig,
-            ShipyardModelConfig, ShipFeatureBuilder, ShipyardFeatureBuilder,
-            ShipRewardEngine, ShipyardRewardEngine, ShipReplayBuffer,
-            ShipyardReplayBuffer, RandomEngine>;
+      Actor<ActorId, DeviceType, BoardConfig, WorkerModelConfig,
+            CityTileModelConfig, WorkerFeatureBuilder, CityTileFeatureBuilder,
+            WorkerRewardEngine, CityTileRewardEngine, WorkerReplayBuffer,
+            CityTileReplayBuffer, RandomEngine>;
 
   using Actors = std::tuple<ActorType<0>>;
   static_assert(ActorCount == 1, "Unsupported");
-  static float train(const HyperParameters &_hyper_parameters,
-                     RandomEngine &random_engine_) {
-    BigDQN ship_dqn(ShipModelConfig::channels, BoardConfig::size,
-                    static_cast<uint64_t>(ShipAction::Count),
-                    _hyper_parameters.m_nn_std_init,
-                    _hyper_parameters.m_nn_atom_count,
-                    _hyper_parameters.m_nn_v_min, _hyper_parameters.m_nn_v_max);
-    ship_dqn.to(DeviceType);
-    SmallDQN shipyard_dqn(ShipyardModelConfig::channels, BoardConfig::size,
-                          static_cast<uint64_t>(ShipyardAction::Count));
-    shipyard_dqn.to(DeviceType);
-
-    ModelTrainer<decltype(ship_dqn), DeviceType,
-                 static_cast<std::size_t>(ShipAction::Count)>
-    ship_model_trainer(
-        _hyper_parameters, ship_dqn, unsigned(ShipModelConfig::channels),
-        unsigned(BoardConfig::size), static_cast<uint64_t>(ShipAction::Count),
-        _hyper_parameters.m_nn_std_init, _hyper_parameters.m_nn_atom_count,
-        _hyper_parameters.m_nn_v_min, _hyper_parameters.m_nn_v_max);
-
-    ModelTrainer<decltype(shipyard_dqn), DeviceType,
-                 static_cast<std::size_t>(ShipyardAction::Count)>
-    shipyard_model_trainer(_hyper_parameters, shipyard_dqn,
-                           unsigned(ShipyardModelConfig::channels),
+public:
+	Trainer(RandomEngine &random_engine_) : 
+		m_worker_dqn(WorkerModelConfig::channels, BoardConfig::size,
+								static_cast<uint64_t>(WorkerAction::Count),
+								HyperParameters::m_nn_std_init,
+								HyperParameters::m_nn_atom_count,
+								HyperParameters::m_nn_v_min, HyperParameters.m_nn_v_max),
+	  m_citytile_dqn(CityTileModelConfig::channels, BoardConfig::size,
+                   static_cast<uint64_t>(CityTileAction::Count)),
+    m_worker_model_learner(
+        worker_dqn, unsigned(WorkerModelConfig::channels),
+        unsigned(BoardConfig::size), static_cast<uint64_t>(WorkerAction::Count),
+        HyperParameters::m_nn_std_init, HyperParameters::m_nn_atom_count,
+        HyperParameters::m_nn_v_min, HyperParameters::m_nn_v_max),
+    m_citytile_model_learner(citytile_dqn,
+                           unsigned(CityTileModelConfig::channels),
                            unsigned(BoardConfig::size),
-                           static_cast<uint64_t>(ShipyardAction::Count));
+                           static_cast<uint64_t>(CityTileAction::Count));
+		m_worker_feature_builder(),
+		m_citytile_feature_builder(),
+		
+    m_worker_replay_buffer(
+        HyperParameters::m_replay_capacity,
+        HyperParameters::m_replay_batch_size, HyperParameters.m_replay_alpha,
+        HyperParameters::m_replay_beta, HyperParameters.m_replay_beta_decay),
 
-    ShipFeatureBuilder ship_feature_builder;
-    ShipyardFeatureBuilder shipyard_feature_builder;
+    m_citytile_replay_buffer(
+        HyperParameters::m_replay_capacity,
+        HyperParameters::m_replay_batch_size, HyperParameters.m_replay_alpha,
+        HyperParameters::m_replay_beta, HyperParameters.m_replay_beta_decay),
 
-    ShipReplayBuffer ship_replay_buffer(
-        _hyper_parameters.m_replay_capacity,
-        _hyper_parameters.m_replay_batch_size, _hyper_parameters.m_replay_alpha,
-        _hyper_parameters.m_replay_beta, _hyper_parameters.m_replay_beta_decay);
+    m_worker_reward_engine(),
+    m_citytile_reward_engine(),
 
-    ShipyardReplayBuffer shipyard_replay_buffer(
-        _hyper_parameters.m_replay_capacity,
-        _hyper_parameters.m_replay_batch_size, _hyper_parameters.m_replay_alpha,
-        _hyper_parameters.m_replay_beta, _hyper_parameters.m_replay_beta_decay);
+		m_actors(tuple_builder<Actors>::create(
+        HyperParameters::m_actor_epsilon_decay,
+        HyperParameters::m_actor_epsilon_start,
+        HyperParameters::m_actor_epsilon_end,
+        HyperParameters::m_nn_atom_count, HyperParameters.m_nn_v_min,
+        HyperParameters::m_nn_v_max, HyperParameters.m_nn_step_size,
+        HyperParameters::m_nn_gamma, HyperParameters.m_replay_batch_size))
 
-    ShipRewardEngine ship_reward_engine(_hyper_parameters);
-    ShipyardRewardEngine shipyard_reward_engine(_hyper_parameters);
+ 	{
+		m_worker_dqn.to(DeviceType);
+		m_citytile_dqn.to(DeviceType);
+	}
+	
+  void inline processEpisode(const kit::Agent& _agent,
+		 const std::size_t _frame, const std::size_t _episode) {
 
-    BoardStore<RandomEngine, BoardConfig, Chunksize, ActorCount> board_store;
+		auto &actor0 = std::get<0>(actors);
+		actor0.processEpisode(_agent, m_worker_dqn, m_citytile_dqn, m_worker_replay_buffer,
+													m_citytile_replay_buffer, m_worker_reward_engine,
+													m_citytile_reward_engine, random_engine_);
 
-    auto actors = tuple_builder<Actors>::create(
-        _hyper_parameters.m_actor_epsilon_decay,
-        _hyper_parameters.m_actor_epsilon_start,
-        _hyper_parameters.m_actor_epsilon_end,
-        _hyper_parameters.m_nn_atom_count, _hyper_parameters.m_nn_v_min,
-        _hyper_parameters.m_nn_v_max, _hyper_parameters.m_nn_step_size,
-        _hyper_parameters.m_nn_gamma, _hyper_parameters.m_replay_batch_size);
-
-    std::size_t frame = 0;
-    // at::InferenceMode guard(false);
-    // at::AutoNonVariableTypeMode guard(false);
-    // at::AutoDispatchBelowADInplaceOrView guard(false);
-    for (int i = 0; i < Iterations; ++i) {
-      Board<BoardConfig, ActorCount> &board =
-          board_store.getNextBoard(random_engine_);
-      pregame_process(board);
-
-      for (int episode = board.getStep(); episode < BoardConfig::episode_steps;
-           ++episode, ++frame) {
-        auto &actor0 = std::get<0>(actors);
-        actor0.processEpisode(board, ship_dqn, shipyard_dqn, ship_replay_buffer,
-                              shipyard_replay_buffer, ship_reward_engine,
-                              shipyard_reward_engine, random_engine_);
-
-        if (frame > _hyper_parameters.m_replay_capacity) {
-          ship_model_trainer.train(frame, ship_replay_buffer, random_engine_);
-          // shipyard_model_trainer.train(frame, shipyard_replay_buffer,
-          // random_engine_);
-        }
-
-        board.setActions(actor0.getBestShipActions(),
-                         actor0.getBestShipyardActions());
-        std::cout << "episode " << episode << " completed" << std::endl;
-        // board.printBoard();
-        board.step();
-        board.printBoard();
-      }
-      std::cout << "game " << i
-                << " completed. Total halite: " << board.getPlayerHalite()
-                << ", Total cargo: " << board.getTotalShipCargo() << std::endl;
-
-      std::get<0>(actors).resetState();
-    }
+		if (frame > HyperParameters::m_replay_capacity) {
+			worker_model_trainer.train(frame, worker_replay_buffer, random_engine_);
+			// citytile_model_trainer.train(frame, citytile_replay_buffer,
+			// random_engine_);
+		}
+		std::get<0>(actors).resetState();
     return 0;
   }
+
+private:
+  ModelLearner<WorkerDQN, DeviceType,
+                 static_cast<std::size_t>(WorkerAction::Count)>
+    m_worker_model_learner;
+  ModelLearner<CityTileDQN, DeviceType,
+                 static_cast<std::size_t>(CityTileAction::Count)>
+    m_citytile_model_learner;
+
+	WorkerFeatureBuilder m_worker_feature_builder;
+  CityTileFeatureBuilder m_citytile_feature_builder;
+  WorkerReplayBuffer m_worker_replay_buffer;
+  CityTileReplayBuffer m_citytile_replay_buffer;
+  WorkerRewardEngine m_worker_reward_engine;
+  CityTileRewardEngine m_citytile_reward_engine;
+  Actors m_actors;
 };
 
 #endif /* TRAINER_HPP_ */
