@@ -21,19 +21,6 @@
 #include "template_util.hpp"
 #include <tuple>
 
-template <typename Board> static inline void pregame_process(Board &board_) {
-  Eigen::ArrayXi start_worker_actions(1);
-  start_worker_actions << 5;
-  Eigen::ArrayXi start_citytile_actions(1);
-  start_citytile_actions << 0;
-  board_.setActions(start_worker_actions, start_citytile_actions);
-  board_.step();
-  start_worker_actions(0) = 0;
-  start_citytile_actions(0) = 1;
-  board_.setActions(start_worker_actions, start_citytile_actions);
-  board_.step();
-}
-
 template <std::size_t ActorCount,
           torch::DeviceType DeviceType, typename RandomEngine>
 class Trainer {
@@ -50,6 +37,12 @@ class Trainer {
       RewardEngine<DeviceType, BoardConfig, WorkerModelConfig>;
   using CityTileRewardEngine =
       RewardEngine<DeviceType, BoardConfig, CityTileModelConfig>;
+
+	using ActionReturn = std::tuple<
+		const Eigen::Ref<const Eigen::ArrayXi>,
+		const Eigen::Ref<const Eigen::ArrayXi>>;
+
+
 	using WorkerDQN = BigDQN;
 	using CityTileDQN = SmallDQN;
 
@@ -109,24 +102,32 @@ public:
 		m_citytile_dqn.to(DeviceType);
 	}
 	
-  void inline processEpisode(const kit::Agent& _agent,
+  inline ActionReturn processEpisode(const kit::Agent& _agent,
 		 const std::size_t _frame, const std::size_t _episode) {
 
-		auto &actor0 = std::get<0>(actors);
+		auto &actor0 = std::get<0>(m_actors);
 		actor0.processEpisode(_agent, m_worker_dqn, m_citytile_dqn, m_worker_replay_buffer,
 													m_citytile_replay_buffer, m_worker_reward_engine,
 													m_citytile_reward_engine, random_engine_);
-
+		
 		if (frame > HyperParameters::m_replay_capacity) {
 			worker_model_trainer.train(frame, worker_replay_buffer, random_engine_);
 			// citytile_model_trainer.train(frame, citytile_replay_buffer,
 			// random_engine_);
 		}
-		std::get<0>(actors).resetState();
-    return 0;
+		return ActionReturn(
+			actor0.getBestWorkerActions(), 
+			actor0.getBestCityTileActions());
   }
+	
+	inline void resetState() {
+		std::get<0>(m_actors).resetState();
+	}
 
 private:
+	WorkerDQN m_worker_dqn;
+	CityTileDQN m_citytile_dqn;
+
   ModelLearner<WorkerDQN, DeviceType,
                  static_cast<std::size_t>(WorkerAction::Count)>
     m_worker_model_learner;

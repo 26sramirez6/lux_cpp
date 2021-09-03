@@ -25,7 +25,7 @@ override_actions_by_choice(std::true_type, RandomEngine &random_engine_,
                            const Mask &_remove_action_mask,
                            Eigen::Ref<Eigen::ArrayXi> new_random_actions_,
                            Eigen::Ref<Eigen::ArrayXi> actions_) {
-  choice(random_engine_, static_cast<int>(ShipAction::Count) - 1,
+  choice(random_engine_, static_cast<int>(WorkerAction::Count) - 1,
          new_random_actions_);
   actions_ = _remove_action_mask.select(new_random_actions_, actions_);
 }
@@ -37,11 +37,11 @@ override_actions_by_choice(std::false_type, RandomEngine &random_engine_,
                            const Mask &_remove_action_mask,
                            Eigen::Ref<Eigen::ArrayXi> new_random_actions_,
                            Eigen::Ref<Eigen::ArrayXi> actions_) {
-  actions_ = _remove_action_mask.select(static_cast<int>(ShipyardAction::NONE),
+  actions_ = _remove_action_mask.select(static_cast<int>(CityTileAction::NONE),
                                         actions_);
 }
 
-template <bool is_ship, typename RandomEngine>
+template <bool is_worker, typename RandomEngine>
 static inline void
 limit_actions_by_choice(RandomEngine &random_engine_, const int _max_allowed,
                         const int _limiting_action,
@@ -58,7 +58,7 @@ limit_actions_by_choice(RandomEngine &random_engine_, const int _max_allowed,
     auto remove_action_mask = limiting_action_mask && exceeded_limit_mask;
 
     override_actions_by_choice(
-        std::integral_constant<bool, is_ship>{}, random_engine_, remove_amount,
+        std::integral_constant<bool, is_worker>{}, random_engine_, remove_amount,
         remove_action_mask, new_random_actions_, actions_);
   }
 }
@@ -82,11 +82,11 @@ static inline void override_actions_by_q(std::false_type,
                                          const Mask &_remove_action_mask,
                                          const torch::Tensor &_q_values,
                                          Eigen::Ref<Eigen::ArrayXi> actions_) {
-  actions_ = _remove_action_mask.select(static_cast<int>(ShipyardAction::NONE),
+  actions_ = _remove_action_mask.select(static_cast<int>(CityTileAction::NONE),
                                         actions_);
 }
 
-template <bool is_ship>
+template <bool is_worker>
 static inline void limit_actions_by_q(const int _max_allowed,
                                       const int _limiting_action,
                                       Eigen::Ref<Eigen::ArrayXi> cumsum_,
@@ -101,7 +101,7 @@ static inline void limit_actions_by_q(const int _max_allowed,
     auto exceeded_limit_mask = cumsum_ > _max_allowed;
     auto remove_action_mask = limiting_action_mask && exceeded_limit_mask;
 
-    override_actions_by_q(std::integral_constant<bool, is_ship>{},
+    override_actions_by_q(std::integral_constant<bool, is_worker>{},
                           remove_action_mask, _q_values, actions_);
   }
 }
@@ -383,11 +383,11 @@ private:
 };
 
 template <std::size_t ActorId, torch::DeviceType DeviceType,
-          typename BoardConfig, typename ShipModelConfig,
-          typename ShipyardModelConfig, typename ShipFeatureBuilder,
-          typename ShipyardFeatureBuilder, typename ShipRewardEngine,
-          typename ShipyardRewardEngine, typename ShipReplayBuffer,
-          typename ShipyardReplayBuffer, typename RandomEngine>
+          typename BoardConfig, typename WorkerModelConfig,
+          typename CityTileModelConfig, typename WorkerFeatureBuilder,
+          typename CityTileFeatureBuilder, typename WorkerRewardEngine,
+          typename CityTileRewardEngine, typename WorkerReplayBuffer,
+          typename CityTileReplayBuffer, typename RandomEngine>
 class Actor {
 public:
   Actor(const float _epsilon_decay, const float _epsilon_start,
@@ -395,38 +395,29 @@ public:
         const float _v_min, const float _v_max, const std::size_t _multi_step_n,
         const float _gamma, const std::size_t _batch_size)
       : m_epsilon_decay(_epsilon_decay), m_epsilon_start(_epsilon_start),
-        m_epsilon_end(_epsilon_end), m_episodes(0), m_prior_ship_count(0),
-        m_prior_shipyard_count(0), m_multi_step_n(_multi_step_n),
-        m_final_ship_batch(), m_final_shipyard_batch(),
-        m_best_ship_actions(BoardConfig::size * BoardConfig::size),
-        m_best_shipyard_actions(BoardConfig::size * BoardConfig::size),
+        m_epsilon_end(_epsilon_end), m_episodes(0), m_prior_worker_count(0),
+        m_prior_citytile_count(0), m_multi_step_n(_multi_step_n),
+        m_best_worker_actions(BoardConfig::size * BoardConfig::size),
+        m_best_citytile_actions(BoardConfig::size * BoardConfig::size),
         m_cumsum(BoardConfig::size * BoardConfig::size),
         m_new_random_actions(BoardConfig::size * BoardConfig::size),
-        m_ship_action_recorder(
-            Eigen::ArrayXf::Ones(ShipModelConfig::output_size)),
-        m_shipyard_action_recorder(
-            Eigen::ArrayXf::Ones(ShipyardModelConfig::output_size)),
-        m_prior_ship_actions(torch::zeros(
+        m_worker_action_recorder(
+            Eigen::ArrayXf::Ones(WorkerModelConfig::output_size)),
+        m_citytile_action_recorder(
+            Eigen::ArrayXf::Ones(CityTileModelConfig::output_size)),
+        m_prior_worker_actions(torch::zeros(
             {BoardConfig::size * BoardConfig::size}, torch::dtype(torch::kInt32)
                                                          .requires_grad(false)
                                                          .device(torch::kCPU))),
-        m_prior_shipyard_actions(torch::zeros(
+        m_prior_citytile_actions(torch::zeros(
             {BoardConfig::size * BoardConfig::size}, torch::dtype(torch::kInt32)
-                                                         .requires_grad(false)
-                                                         .device(torch::kCPU))),
-        m_retained_ship_indices(torch::zeros(
-            {BoardConfig::size * BoardConfig::size}, torch::dtype(torch::kInt64)
-                                                         .requires_grad(false)
-                                                         .device(torch::kCPU))),
-        m_retained_shipyard_indices(torch::zeros(
-            {BoardConfig::size * BoardConfig::size}, torch::dtype(torch::kInt64)
                                                          .requires_grad(false)
                                                          .device(torch::kCPU))),
         m_support(torch::linspace(_v_min, _v_max, _atom_count,
                                   torch::dtype(torch::kFloat32)
                                       .requires_grad(false)
                                       .device(DeviceType))),
-        m_ship_pawn_manager(_multi_step_n, _gamma, _batch_size){};
+        m_worker_pawn_manager(_multi_step_n, _gamma, _batch_size){};
 
   inline bool isEpsilonFrame(RandomEngine &random_engine_) const {
     return random_engine_.uniform() <
@@ -442,92 +433,83 @@ public:
     }
   }
 
-  template <typename Board, typename ShipDQN, typename ShipyardDQN>
+  template <typename Board, typename WorkerDQN, typename CityTileDQN>
   inline void processEpisode(const Board &_current_board,
-                             ShipDQN &dynamic_ship_model_,
-                             ShipyardDQN &dynamic_shipyard_model_,
-                             ShipReplayBuffer &ship_replay_buffer_,
-                             ShipyardReplayBuffer &shipyard_replay_buffer_,
-                             ShipRewardEngine &ship_reward_engine_,
-                             ShipyardRewardEngine &shipyard_reward_engine_,
+                             WorkerDQN &dynamic_worker_model_,
+                             CityTileDQN &dynamic_citytile_model_,
+                             WorkerReplayBuffer &worker_replay_buffer_,
+                             CityTileReplayBuffer &citytile_replay_buffer_,
+                             WorkerRewardEngine &worker_reward_engine_,
+                             CityTileRewardEngine &citytile_reward_engine_,
                              RandomEngine &random_engine_) {
 
     std::cout << "ACTOR: processEpisode()" << std::endl;
-    const std::size_t latest_ship_count = _current_board.getShipCount();
-    const std::size_t latest_shipyard_count = _current_board.getShipyardCount();
-    const bool any_ships = latest_ship_count > 0;
-    const bool any_shipyards = latest_shipyard_count > 0;
-    const bool any_obj = any_ships || any_shipyards;
+    const std::size_t latest_worker_count = _current_board.getShipCount();
+    const std::size_t latest_citytile_count = _current_board.getShipyardCount();
+    const bool any_workers = latest_worker_count > 0;
+    const bool any_citytiles = latest_citytile_count > 0;
+    const bool any_obj = any_workers || any_citytiles;
 
-    const auto &ship_map = _current_board.getShipMap();
-    const auto &shipyard_map = _current_board.getShipyardMap();
-    const auto &retained_ships =
-        _current_board.template getRetainedShips<ActorId>();
-    const auto &retained_shipyards =
-        _current_board.template getRetainedShipyards<ActorId>();
-    const int retained_ships_count = retained_ships.size();
-    const int retained_shipyards_count = retained_shipyards.size();
-
-		m_ship_pawn_manager.template updatePawnStates<ShipFeatureBuilder>(
+		m_worker_pawn_manager.template updatePawnStates<WorkerFeatureBuilder>(
 			_current_board, 
-			ship_reward_engine_,
-			m_prior_ship_actions.index({torch::indexing::Slice(0, m_prior_ship_count, 1)}));
+			worker_reward_engine_,
+			m_prior_worker_actions.index({torch::indexing::Slice(0, m_prior_worker_count, 1)}));
 
-		m_ship_pawn_manager.pushTransitions(ship_replay_buffer_);
+		m_worker_pawn_manager.pushTransitions(worker_replay_buffer_);
 
     if (any_obj && isEpsilonFrame(random_engine_)) {
-      if (any_ships) {
-        std::cout << "m_ship_action_recorder" << std::endl;
-        std::cout << m_ship_action_recorder << std::endl;
+      if (any_workers) {
+        std::cout << "m_worker_action_recorder" << std::endl;
+        std::cout << m_worker_action_recorder << std::endl;
         // TODO: Remove
-        // m_ship_action_recorder(5) = 1e10;
-        Eigen::ArrayXf probs = (m_ship_action_recorder.sum() -
-                                m_ship_action_recorder.head(5) /*TODO Remove*/);
+        // m_worker_action_recorder(5) = 1e10;
+        Eigen::ArrayXf probs = (m_worker_action_recorder.sum() -
+                                m_worker_action_recorder.head(5) /*TODO Remove*/);
 
         probs /= probs.sum();
 
         std::cout << "probs:" << std::endl;
         std::cout << probs << std::endl;
         choice(random_engine_, probs,
-               m_best_ship_actions.head(latest_ship_count));
-        std::cout << "choice: " << m_best_ship_actions.head(latest_ship_count)
+               m_best_worker_actions.head(latest_worker_count));
+        std::cout << "choice: " << m_best_worker_actions.head(latest_worker_count)
                   << std::endl;
 
-        const int max_shipyards_allowed =
+        const int max_citytiles_allowed =
             _current_board.getShipyardCount() == 0 ? 1 : 0;
         limit_actions_by_choice<true>(
-            random_engine_, max_shipyards_allowed,
-            static_cast<int>(ShipAction::CONVERT),
-            m_cumsum.head(latest_ship_count),
-            m_new_random_actions.head(latest_ship_count),
-            m_best_ship_actions.head(latest_ship_count));
+            random_engine_, max_citytiles_allowed,
+            static_cast<int>(WorkerAction::CONVERT),
+            m_cumsum.head(latest_worker_count),
+            m_new_random_actions.head(latest_worker_count),
+            m_best_worker_actions.head(latest_worker_count));
       }
 
-      if (any_shipyards) {
-        Eigen::ArrayXf probs = (m_shipyard_action_recorder.maxCoeff() -
-                                m_shipyard_action_recorder) /
-                               m_shipyard_action_recorder.sum();
+      if (any_citytiles) {
+        Eigen::ArrayXf probs = (m_citytile_action_recorder.maxCoeff() -
+                                m_citytile_action_recorder) /
+                               m_citytile_action_recorder.sum();
         choice(random_engine_, probs,
-               m_best_shipyard_actions.head(latest_shipyard_count));
+               m_best_citytile_actions.head(latest_citytile_count));
 
-        const int max_ships_allowed =
-            _current_board.getShipCount() == 0 ? 1 : 0;
+        const int max_workers_allowed =
+            latest_worker_count == 0 ? 1 : 0;
         limit_actions_by_choice<false>(
-            random_engine_, max_ships_allowed,
-            static_cast<int>(ShipyardAction::SPAWN),
-            m_cumsum.head(latest_shipyard_count),
-            m_new_random_actions.head(latest_shipyard_count),
-            m_best_shipyard_actions.head(latest_shipyard_count));
+            random_engine_, max_workers_allowed,
+            static_cast<int>(CityTileAction::SPAWN),
+            m_cumsum.head(latest_citytile_count),
+            m_new_random_actions.head(latest_citytile_count),
+            m_best_citytile_actions.head(latest_citytile_count));
       }
 
     } else if (any_obj) {
       torch::NoGradGuard no_grad;
-      if (any_ships) {
-        const auto slice = torch::indexing::Slice(0, m_ship_pawn_manager.getLatestPawnCount(), 1);
+      if (any_workers) {
+        const auto slice = torch::indexing::Slice(0, m_worker_pawn_manager.getLatestPawnCount(), 1);
 
-				const auto& state_features = m_ship_pawn_manager.getLatestStateFeatures();
+				const auto& state_features = m_worker_pawn_manager.getLatestStateFeatures();
 
-				torch::Tensor q_distribution = dynamic_ship_model_.forward(
+				torch::Tensor q_distribution = dynamic_worker_model_.forward(
             state_features.m_geometric.index({slice}));
 
         torch::Tensor q_projected_dist = q_distribution * m_support;
@@ -536,59 +518,54 @@ public:
 
         torch::Tensor argmax = std::get<1>(q_current.max(1));
 
-        tensor_to_eigen<int64_t>(argmax, m_best_ship_actions);
-        const int max_shipyards_allowed =
-            _current_board.getShipyardCount() == 0 ? 1 : 0;
+        tensor_to_eigen<int64_t>(argmax, m_best_worker_actions);
+        const int max_citytiles_allowed =
+            latest_citytile_count == 0 ? 1 : 0;
 
         limit_actions_by_q<true>(
-            max_shipyards_allowed, static_cast<int>(ShipAction::CONVERT),
-            m_cumsum.head(latest_ship_count),
-            m_best_ship_actions.head(latest_ship_count), q_current);
+            max_citytiles_allowed, static_cast<int>(WorkerAction::CONVERT),
+            m_cumsum.head(latest_worker_count),
+            m_best_worker_actions.head(latest_worker_count), q_current);
         std::cout << "ACTOR Q current: " << std::endl;
         std::cout << q_current << std::endl;
       }
 
-      if (any_shipyards) {
-        m_best_shipyard_actions.head(latest_shipyard_count) = 0;
+      if (any_citytiles) {
+        m_best_citytile_actions.head(latest_citytile_count) = 0;
       }
     }
 
-    //m_final_shipyard_batch.m_state = m_tmp_shipyard_batch.m_next_state;
 
-    eigen_to_tensor<int32_t>(m_best_ship_actions.head(m_prior_ship_count),
-                             m_prior_ship_actions);
+    eigen_to_tensor<int32_t>(m_best_worker_actions.head(m_prior_worker_count),
+                             m_prior_worker_actions);
     eigen_to_tensor<int32_t>(
-        m_best_shipyard_actions.head(m_prior_shipyard_count),
-        m_prior_shipyard_actions);
+        m_best_citytile_actions.head(m_prior_citytile_count),
+        m_prior_citytile_actions);
 
-    updateRecorderForActionsTaken(m_best_ship_actions.head(latest_ship_count),
-                                  m_ship_action_recorder);
+    updateRecorderForActionsTaken(m_best_worker_actions.head(latest_worker_count),
+                                  m_worker_action_recorder);
     updateRecorderForActionsTaken(
-        m_best_shipyard_actions.head(latest_shipyard_count),
-        m_shipyard_action_recorder);
+        m_best_citytile_actions.head(latest_citytile_count),
+        m_citytile_action_recorder);
 
-    m_prior_ship_count = latest_ship_count;
-    m_prior_shipyard_count = latest_shipyard_count;
+    m_prior_worker_count = latest_worker_count;
+    m_prior_citytile_count = latest_citytile_count;
     m_episodes++;
   }
 
-  inline const Eigen::Ref<const Eigen::ArrayXi> getBestShipActions() const {
-    return m_best_ship_actions.head(m_prior_ship_count);
+  inline const Eigen::Ref<const Eigen::ArrayXi> getBestWorkerActions() const {
+    return m_best_worker_actions.head(m_prior_worker_count);
   }
-  inline const Eigen::Ref<const Eigen::ArrayXi> getBestShipyardActions() const {
-    return m_best_shipyard_actions.head(m_prior_shipyard_count);
+  inline const Eigen::Ref<const Eigen::ArrayXi> getBestCityTileActions() const {
+    return m_best_citytile_actions.head(m_prior_citytile_count);
   }
 
   inline void resetState() {
-		m_ship_pawn_manager.resetState();
-    m_prior_ship_count = 0;
-    m_prior_shipyard_count = 0;
-    m_prior_ship_actions.zero_();
-    m_prior_shipyard_actions.zero_();
-    m_final_ship_batch.zero_();
-    m_final_shipyard_batch.zero_();
-    m_tmp_ship_batch.zero_();
-    m_tmp_shipyard_batch.zero_();
+		m_worker_pawn_manager.resetState();
+    m_prior_worker_count = 0;
+    m_prior_citytile_count = 0;
+    m_prior_worker_actions.zero_();
+    m_prior_citytile_actions.zero_();
   }
 
 private:
@@ -596,33 +573,25 @@ private:
   float m_epsilon_start;
   float m_epsilon_end;
   long m_episodes;
-  std::size_t m_prior_ship_count;
-  std::size_t m_prior_shipyard_count;
+  std::size_t m_prior_worker_count;
+  std::size_t m_prior_citytile_count;
   std::size_t m_multi_step_n;
-  DynamicBatch<DeviceType, BoardConfig, ShipModelConfig> m_final_ship_batch;
-  DynamicBatch<DeviceType, BoardConfig, ShipyardModelConfig>
-      m_final_shipyard_batch;
-  DynamicBatch<DeviceType, BoardConfig, ShipModelConfig> m_tmp_ship_batch;
-  DynamicBatch<DeviceType, BoardConfig, ShipyardModelConfig>
-      m_tmp_shipyard_batch;
 
   // TODO: size known at compile time
-  Eigen::ArrayXi m_best_ship_actions;
-  Eigen::ArrayXi m_best_shipyard_actions;
+  Eigen::ArrayXi m_best_worker_actions;
+  Eigen::ArrayXi m_best_citytile_actions;
   Eigen::ArrayXi m_cumsum;
   Eigen::ArrayXi m_new_random_actions;
-  Eigen::ArrayXf m_ship_action_recorder;
-  Eigen::ArrayXf m_shipyard_action_recorder;
+  Eigen::ArrayXf m_worker_action_recorder;
+  Eigen::ArrayXf m_citytile_action_recorder;
 
-  torch::Tensor m_prior_ship_actions;
-  torch::Tensor m_prior_shipyard_actions;
-  torch::Tensor m_retained_ship_indices;
-  torch::Tensor m_retained_shipyard_indices;
+  torch::Tensor m_prior_worker_actions;
+  torch::Tensor m_prior_citytile_actions;
 
   torch::Tensor m_support;
 
-  MultiStepPawnManager<ActorId, DeviceType, ShipRewardEngine, ShipReplayBuffer, ShipModelConfig>
-      m_ship_pawn_manager;
+  MultiStepPawnManager<ActorId, DeviceType, WorkerRewardEngine, WorkerReplayBuffer, WorkerModelConfig>
+      m_worker_pawn_manager;
 };
 
 #endif /* ACTOR_HPP_ */

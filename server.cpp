@@ -34,10 +34,11 @@ static inline void initialize_game(kit::Agent& agent_, char * membuf_) {
 	std::cout << "initialized game: id " << agent_.id << ", " << agent_.mapWidth << ", " << agent_.mapHeight << std::endl;
 }
 
-
-static inline void send_actions(const std::vector<std::string>& _actions, char * membuf_) {
+template<typename ActionReturn>
+static inline void send_actions(const ActionReturn& _actions, char * membuf_) {
 	std::stringstream ss;
 	ss << ack_inputs_processed;
+
 	for (int i = 0; i < _actions.size(); i++) {
 		if (i != 0) {
 			ss << ",";
@@ -49,11 +50,6 @@ static inline void send_actions(const std::vector<std::string>& _actions, char *
 	const char * cstr = str.c_str();
 	strcpy(membuf_, cstr);
 } 
-
-static std::vector<std::string> build_actions() {
-	std::vector<std::string> ret;
-	return ret;
-}
 
 static char * initialize_memory_map() {
 	int shmid;
@@ -71,6 +67,7 @@ static char * initialize_memory_map() {
 	return membuf;
 }
 
+
 main() {
 		char *membuf = initialize_memory_map();
 		kit::Agent agent = kit::Agent();
@@ -85,17 +82,17 @@ main() {
 
 			if (is_new_game)	{
 				agent.resetPlayerStates();
+				trainer.resetState();
 				initialize_game(agent, membuf);
 				episode = 0;
 				continue;
 			}
 			agent.updateServer(membuf);
-			trainer.processEpisode(agent);
-			std::vector<std::string> actions = build_actions();
+			const auto actions = trainer.processEpisode(agent, frame, episode);
 			send_actions(actions, membuf);
 			std::cout << "sent actions: " << membuf << std::endl;					
 			wait_for_client_to_forward_actions(membuf);
-			episode++;
+			episode++; frame++;
 			std::cout << "completed episode: " << episode << std::endl;
 		}
     exit(0);
