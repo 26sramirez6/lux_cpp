@@ -34,17 +34,73 @@ static inline void initialize_game(kit::Agent& agent_, char * membuf_) {
 	std::cout << "initialized game: id " << agent_.id << ", " << agent_.mapWidth << ", " << agent_.mapHeight << std::endl;
 }
 
-template<typename ActionReturn>
-static inline void send_actions(const ActionReturn& _actions, char * membuf_) {
+static inline void send_actions(
+	const kit::Agent& _agent, const Trainer::ActionReturn& _actions, char * membuf_) {
 	std::stringstream ss;
 	ss << ack_inputs_processed;
 
-	for (int i = 0; i < _actions.size(); i++) {
-		if (i != 0) {
-			ss << ",";
+	const auto worker_actions = std::get<0>(_actions);
+	const auto ctile_actions = std::get<1>(_actions);
+	const auto& player = _agent.players[_agent.id];
+	const auto& workers = player.units;
+	const auto&	cities = player.cities;
+  
+	assert(workers.size() == worker_actions.size());
+	for (int i = 0; i < workers.size(); i++) {
+		const auto& unit = workers[i];
+		if (!unit.canAct()) continue;
+		if (i!=0) ss << ",";
+		const auto action = static_cast<WorkerActions>(worker_actions(i));
+		switch (worker_actions) {
+		case WorkerActions::CENTER:
+			ss << unit.move(DIRECTIONS::CENTER);
+			break;
+		case WorkerActions::NORTH:
+			ss << unit.move(DIRECTIONS::NORTH);
+			break;
+		case WorkerActions::EAST:
+			ss << unit.move(DIRECTIONS::EAST);
+			break;
+		case WorkerActions::SOUTH:
+			ss << unit.move(DIRECTIONS::SOUTH);
+			break;
+		case WorkerActions::WEST:
+			ss << unit.move(DIRECTIONS::WEST);
+			break;
+		case WorkerActions::PILLAGE:
+			ss << unit.pillage();
+			break;
+		case WorkerActions::TRANSFER:
+			assert(false);
+			break;
+		case WorkerActions::BUILD:
+			ss << unit.buildCity();
+			break;
 		}
-		ss << _actions[i];
 	}
+
+	// TODO: massive fixme
+	int i = 0;
+	for (const auto& kv : cities) {
+		const auto& city = kv.second;
+		for (const auto& ctile : city.citytiles) {
+			if (!ctile.canAct()) continue;
+			if (i != 0) ss << ",";
+			const auto action = ctile_actions(i++);
+			switch (ctile_actions) {
+			case CityTileActions::BUILD_WORKER:
+				ss << ctile.buildWorker();
+				break;
+			case CityTileActions::BUILD_CART:
+				ss << ctile.buildCart();
+				break;
+			case CityTileActions::RESEARCH:
+				ss << ctile.research();
+				break; 
+			}	
+		}
+	}	
+
 	ss << "D_FINISH\n";
 	const std::string str(ss.str());
 	const char * cstr = str.c_str();
