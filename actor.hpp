@@ -13,7 +13,7 @@
 #include <random>
 #include <type_traits>
 
-#include "board.hpp"
+#include "pawn_types.hpp"
 #include "feature_builder.hpp"
 #include "model_config.hpp"
 #include "replay_buffer.hpp"
@@ -44,7 +44,7 @@ override_actions_by_choice(std::false_type, RandomEngine &random_engine_,
 template <bool is_worker, typename RandomEngine>
 static inline void
 limit_actions_by_choice(RandomEngine &random_engine_, const int _max_allowed,
-                        const int _limiting_action,
+                        int const * _limiting_actions,
                         Eigen::Ref<Eigen::ArrayXi> cumsum_,
                         Eigen::Ref<Eigen::ArrayXi> new_random_actions_,
                         Eigen::Ref<Eigen::ArrayXi> actions_) {
@@ -106,7 +106,7 @@ static inline void limit_actions_by_q(const int _max_allowed,
   }
 }
 
-template <std::size_t ActorId, torch::DeviceType DeviceType,
+template <std::size_t ActorId, torch::DeviceType DeviceType, typename PawnType,
           typename RewardEngine, typename ReplayBuf, 
 					typename ModelConfig>
 class MultiStepPawnManager {
@@ -153,21 +153,21 @@ public:
 		}
 	}	
 	
-  template <typename FeatureBuilder, typename Board>
-  void updatePawnStates(const Board &_current_board,
+  template <typename FeatureBuilder, typename Env>
+  void updatePawnStates(const Env &_env,
                         RewardEngine &reward_engine_,
                         const torch::Tensor &_latest_actions) {
     // TODO: make generic for any pawn
-    const auto &pawn_map = _current_board.getShipMap();
-		m_latest_pawn_count = pawn_map.size(); // don't rely on multi_step_pawn_ids
-		pushLatestFeatureState<FeatureBuilder>(_current_board);
+    const auto &pawn_ids = PawnType::get_pawn_ids(_env);
+		m_latest_pawn_count = pawn_ids.size(); // don't rely on multi_step_pawn_ids
+		pushLatestFeatureState<FeatureBuilder>(_env);
 
 		if (_latest_actions.size(0) > 0) {
-			pushLatestPawns(pawn_map);
-			pushLatestRewards(_current_board, reward_engine_);
+			pushLatestPawns(pawn_ids);
+			pushLatestRewards(_env, reward_engine_);
 			pushLatestActions(_latest_actions);
 		}
-    if (_current_board.m_step > m_n && m_multi_step_pawn_ids.size() == m_n) {
+    if (_env.m_step > m_n && m_multi_step_pawn_ids.size() == m_n) {
       std::vector<int> nth_retained_ids_prior;
       const auto &nth_ids_prior = m_multi_step_pawn_ids.front();
       nth_retained_ids_prior.reserve(nth_ids_prior.size());
@@ -197,7 +197,7 @@ public:
                                                    retained_count);
       updateFinalBatchNonTerminal(retained_count);
       updateFinalBatchActions(nth_ids_prior.size());
-      updateFinalBatchRewards(_current_board, nth_retained_ids_prior,
+      updateFinalBatchRewards(_env, nth_retained_ids_prior,
                               reward_engine_);
 
       m_multi_step_pawn_ids.pop();
@@ -226,15 +226,8 @@ public:
 	}
 
 private:
-	template<typename PawnMap>
-	void inline pushLatestPawns(const PawnMap& _pawn_map) {
-    std::vector<int> latest_ids;
-    latest_ids.reserve(_pawn_map.size());
-    std::transform(_pawn_map.begin(), _pawn_map.end(),
-                   std::back_inserter(latest_ids),
-                   [](const auto &pair) { return pair.first; });
-
-    m_multi_step_pawn_ids.push(std::move(latest_ids));
+	void inline pushLatestPawns(std::vector<int>& latest_ids_) {
+    m_multi_step_pawn_ids.push(std::move(latest_ids_));
 	}	
 
   void inline pushLatestActions(const torch::Tensor &_latest_actions) {
@@ -242,19 +235,19 @@ private:
     m_multi_step_actions.push(_latest_actions.clone());
   }
 
-  template <typename FeatureBuilder, typename Board>
-  void inline pushLatestFeatureState(const Board &_current_board) {
+  template <typename FeatureBuilder, typename Env>
+  void inline pushLatestFeatureState(const Env &_env) {
     BatchStateFeatures feature_state(m_batch_size);
-    FeatureBuilder::template setStateFeatures<BoardConfig>(_current_board,
+    FeatureBuilder::template setStateFeatures<BoardConfig>(_env,
                                                            feature_state);
     m_multi_step_features.push(std::move(feature_state));
   }
 
-  template <typename Board>
-  void inline pushLatestRewards(const Board &_current_board,
+  template <typename Env>
+  void inline pushLatestRewards(const Env &_env,
                                 RewardEngine &reward_engine_) {
 		std::unordered_map<int, float> reward_map;
-    reward_engine_.template computeRewards<ActorId>(_current_board,
+    reward_engine_.template computeRewards<ActorId>(_env,
                                                     reward_map);
 		std::cout << "pushing rewards: ";
 		for(auto& kv : reward_map) {
@@ -312,8 +305,8 @@ private:
     m_multi_step_actions.pop();
   }
 
-  template <typename Board>
-  void updateFinalBatchRewards(const Board &_current_board,
+  template <typename Env>
+  void updateFinalBatchRewards(const Env &_env,
                                const std::vector<int> &_nth_retained_ids_prior,
                                RewardEngine &reward_engine_) {
 		// copy ctor called here
@@ -433,8 +426,8 @@ public:
     }
   }
 
-  template <typename Board, typename WorkerDQN, typename CityTileDQN>
-  inline void processEpisode(const Board &_current_board,
+  template <typename Env, typename WorkerDQN, typename CityTileDQN>
+  inline void processEpisode(const Env &_env,
                              WorkerDQN &dynamic_worker_model_,
                              CityTileDQN &dynamic_citytile_model_,
                              WorkerReplayBuffer &worker_replay_buffer_,
@@ -444,16 +437,18 @@ public:
                              RandomEngine &random_engine_) {
 
     std::cout << "ACTOR: processEpisode()" << std::endl;
-    const std::size_t latest_worker_count = _current_board.getShipCount();
-    const std::size_t latest_citytile_count = _current_board.getShipyardCount();
+
+		m_worker_pawn_manager.template updatePawnStates<WorkerFeatureBuilder>(
+			_env, 
+			worker_reward_engine_,
+			m_prior_worker_actions.index({torch::indexing::Slice(0, m_prior_worker_count, 1)}));
+		
+    const std::size_t latest_worker_count = m_worker_pawn_manager.getLatestPawnCount();
+    const std::size_t latest_citytile_count = 1;
     const bool any_workers = latest_worker_count > 0;
     const bool any_citytiles = latest_citytile_count > 0;
     const bool any_obj = any_workers || any_citytiles;
 
-		m_worker_pawn_manager.template updatePawnStates<WorkerFeatureBuilder>(
-			_current_board, 
-			worker_reward_engine_,
-			m_prior_worker_actions.index({torch::indexing::Slice(0, m_prior_worker_count, 1)}));
 
 		m_worker_pawn_manager.pushTransitions(worker_replay_buffer_);
 
@@ -461,13 +456,11 @@ public:
       if (any_workers) {
         std::cout << "m_worker_action_recorder" << std::endl;
         std::cout << m_worker_action_recorder << std::endl;
-        // TODO: Remove
-        // m_worker_action_recorder(5) = 1e10;
         Eigen::ArrayXf probs = (m_worker_action_recorder.sum() -
-                                m_worker_action_recorder.head(5) /*TODO Remove*/);
-
+                                m_worker_action_recorder.head(5));
+				probs *= probs;
         probs /= probs.sum();
-
+				
         std::cout << "probs:" << std::endl;
         std::cout << probs << std::endl;
         choice(random_engine_, probs,
@@ -475,28 +468,29 @@ public:
         std::cout << "choice: " << m_best_worker_actions.head(latest_worker_count)
                   << std::endl;
 
-        const int max_citytiles_allowed =
-            _current_board.getShipyardCount() == 0 ? 1 : 0;
+        const int max_citytiles_allowed = any_citytiles ? 0 : 1;
         limit_actions_by_choice<true>(
             random_engine_, max_citytiles_allowed,
-            static_cast<int>(WorkerAction::CONVERT),
+            static_cast<int>(WorkerAction::BUILD),
             m_cumsum.head(latest_worker_count),
             m_new_random_actions.head(latest_worker_count),
             m_best_worker_actions.head(latest_worker_count));
       }
 
       if (any_citytiles) {
-        Eigen::ArrayXf probs = (m_citytile_action_recorder.maxCoeff() -
-                                m_citytile_action_recorder) /
-                               m_citytile_action_recorder.sum();
+        Eigen::ArrayXf probs = (m_citytile_action_recorder.sum() -
+                                m_citytile_action_recorder);
+				probs *= probs;
+				probs /= probs.sum();
+				
         choice(random_engine_, probs,
                m_best_citytile_actions.head(latest_citytile_count));
 
-        const int max_workers_allowed =
-            latest_worker_count == 0 ? 1 : 0;
+        const int max_workers_allowed = any_workers ? 0 : 1;
+
         limit_actions_by_choice<false>(
             random_engine_, max_workers_allowed,
-            static_cast<int>(CityTileAction::SPAWN),
+            static_cast<int>(CityTileAction::BUILD_WORKER),
             m_cumsum.head(latest_citytile_count),
             m_new_random_actions.head(latest_citytile_count),
             m_best_citytile_actions.head(latest_citytile_count));
@@ -590,7 +584,7 @@ private:
 
   torch::Tensor m_support;
 
-  MultiStepPawnManager<ActorId, DeviceType, WorkerRewardEngine, WorkerReplayBuffer, WorkerModelConfig>
+  MultiStepPawnManager<ActorId, DeviceType, Worker, WorkerRewardEngine, WorkerReplayBuffer, WorkerModelConfig>
       m_worker_pawn_manager;
 };
 

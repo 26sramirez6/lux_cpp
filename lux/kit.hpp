@@ -105,7 +105,6 @@ namespace kit
                  << std::flush;
         }
 				
-
 				void updateClient() {
             this->turn++;
             resetPlayerStates();

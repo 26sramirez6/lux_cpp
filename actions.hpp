@@ -24,6 +24,7 @@ enum class CartActions {
 };
 
 enum class CityTileActions {
+	NONE,
 	BUILD_WORKER,
 	BUILD_CART,
 	RESEARCH,
