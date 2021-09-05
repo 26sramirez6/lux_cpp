@@ -117,6 +117,7 @@ struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
 
 		VectorizedUnits units(player, BoardConfig::size*BoardConfig::size);
 		emplace_resources(game_map, units.m_workers, ftrs_.m_geometric);
+
 		const int worker_count = units.m_workers.size();
 		const int ctile_count = units.m_citytiles.size();
 

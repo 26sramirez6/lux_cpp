@@ -67,12 +67,12 @@ static inline void send_actions(
 		case WorkerActions::WEST:
 			ss << unit.move(DIRECTIONS::WEST);
 			break;
-		case WorkerActions::PILLAGE:
-			ss << unit.pillage();
-			break;
-		case WorkerActions::TRANSFER:
-			assert(false);
-			break;
+//		case WorkerActions::PILLAGE:
+//			ss << unit.pillage();
+//			break;
+//		case WorkerActions::TRANSFER:
+//			assert(false);
+//			break;
 		case WorkerActions::BUILD:
 			ss << unit.buildCity();
 			break;
@@ -91,9 +91,9 @@ static inline void send_actions(
 			case CityTileActions::BUILD_WORKER:
 				ss << ctile.buildWorker();
 				break;
-			case CityTileActions::BUILD_CART:
-				ss << ctile.buildCart();
-				break;
+//			case CityTileActions::BUILD_CART:
+//				ss << ctile.buildCart();
+//				break;
 			case CityTileActions::RESEARCH:
 				ss << ctile.research();
 				break; 

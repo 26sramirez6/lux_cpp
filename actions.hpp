@@ -7,8 +7,8 @@ enum class WorkerActions {
 	EAST,
 	SOUTH,
 	WEST,
-	PILLAGE,
-	TRANSFER,
+	//PILLAGE,
+	//TRANSFER,
 	BUILD,
 	Count
 };
@@ -26,7 +26,7 @@ enum class CartActions {
 enum class CityTileActions {
 	NONE,
 	BUILD_WORKER,
-	BUILD_CART,
+	//BUILD_CART,
 	RESEARCH,
 	Count
 }

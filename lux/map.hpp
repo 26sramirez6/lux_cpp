@@ -75,7 +75,23 @@ namespace lux
             cell->resource = Resource();
             cell->resource.amount = amount;
             cell->resource.type = type;
+						if (cell->resource.type==ResourceType::wood) {
+							max_wood = max_wood > amount ? max_wood : amount;
+						} else if (cell->resource.type==ResourceType::wood) {
+							max_coal = max_coal > amount ? max_coal : amount;
+						} else {
+							max_uranium = max_uranium > amount ? max_uranium : amount;
+						}
         }
+				
+				inline int getMaxWood() const { return max_wood; }
+				inline int getMaxCoal() const { return max_coal; }
+				inline int getMaxUranium() const { return max_uranium; }
+private:
+				int max_wood = -1;
+				int max_coal = -1;
+				int max_uranium = -1;
+
     };
 
 };

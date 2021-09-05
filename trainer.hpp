@@ -33,10 +33,8 @@ class Trainer {
   using WorkerReplayBuffer = ReplayBuffer<DeviceType, WorkerBatch, WorkerTransition>;
   using CityTileReplayBuffer =
       ReplayBuffer<DeviceType, CityTileBatch, CitytileTransition>;
-  using WorkerRewardEngine =
-      RewardEngine<DeviceType, BoardConfig, WorkerModelConfig>;
-  using CityTileRewardEngine =
-      RewardEngine<DeviceType, BoardConfig, CityTileModelConfig>;
+  using WorkerRewardEngine = WorkerRewardEngine<DeviceType, BoardConfig>;
+  using CityTileRewardEngine = WorkerRewardEngine<DeviceType, BoardConfig>;
 
 	using ActionReturn = std::tuple<
 		const Eigen::Ref<const Eigen::ArrayXi>,
