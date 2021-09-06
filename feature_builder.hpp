@@ -1,7 +1,6 @@
 #ifndef FEATURE_BUILDER_HPP
 #define FEATURE_BUILDER_HPP
 
-#include "board.hpp"
 #include "board_config.hpp"
 #include "math_util.hpp"
 #include "model_config.hpp"
@@ -11,14 +10,14 @@
 template<typename Units, int size>
 static void emplace_resources(
 	const Units &_units,
-	const kit:GameMap &_game_map, 
+	const lux::GameMap &_game_map, 
 	torch::Tensor& geometric_) {	
 	auto accessor = geometric_.accessor<float, 4>();
 	const auto resource_channels = torch::indexing::Slice({0,3,1});
 	geometric_.index_put_({resource_channels}, -1);
 	for (int y = 0; y < _game_map.height; y++) {
 		for (int x = 0; x < _game_map.width; x++) {
-			const Cell *cell = _game_map.getCell(x, y);
+			const lux::Cell *cell = _game_map.getCell(x, y);
 			if (cell->hasResource()) {
 				int i = 0;
 				for (const auto& unit : _units) { 
@@ -26,13 +25,13 @@ static void emplace_resources(
 					const int shift_x = size / 2 - unit->pos.x;
 
 					switch (cell->resource.type) {
-					case ResourceType::wood:
+					case lux::ResourceType::wood:
 						accessor[i++][0][y + shift_y][x + shift_x] = cell->resource.amount; 
 						break;
-					case ResourceType::coal:
+					case lux::ResourceType::coal:
 						accessor[i++][1][y + shift_y][x + shift_x] = cell->resource.amount;
 						break;
-					case ResourceType::uranium:
+					case lux::ResourceType::uranium:
 						accessor[i++][2][y + shift_y][x + shift_x] = cell->resource.amount; 
 						break;
 					}
@@ -40,13 +39,12 @@ static void emplace_resources(
 			}
 		}
 	}
-	return resources;
 }
 
 template<typename UnitVector>
 static torch::Tensor translate_positions(const UnitVector& _units) {
 	auto positions = torch::zeros({_units.size() , 2}, torch::dtype(torch::kInt16).requires_grad(false));
-	auto accessor = positions.accessor<short, 2>();
+	auto accessor = positions.template accessor<short, 2>();
 	for (int i = 0; i < _units.size(); i++) {
 		const auto& unit_ptr = _units[i];
 		accessor[i][0] = unit_ptr->pos.x;
@@ -57,29 +55,29 @@ static torch::Tensor translate_positions(const UnitVector& _units) {
 
 
 struct VectorizedUnits {
-	VectorizedUnits(const Player& _player, const int _reserve) {
+	VectorizedUnits(const lux::Player& _player, const int _reserve) {
 		m_workers.reserve(_reserve);
 		m_carts.reserve(_reserve);
 		m_city_tiles.reserve(_reserve);
 		for (int i = 0; i < _player.units.size(); i++) {	
 			if (_player.units[i].isWorker()) {
-				units.m_workers.push_back(&_player.units[i]);
+				m_workers.push_back(&_player.units[i]);
 			} else {
-				units.m_carts.push_back(&_player.units[i]);
+				m_carts.push_back(&_player.units[i]);
 			}
 		}		
-		for (auto& kv : _player.cities) {
+		for (const auto& kv : _player.cities) {
 			const auto& ctiles = kv.second.citytiles;
 			for (int i = 0; i < ctiles.size(); i++) {
-				units.m_citytiles.push_back(&ctiles[i]);
+				m_city_tiles.push_back(&ctiles[i]);
 			}
 		} 
 	}
 
-	std::vector<Unit const * const> m_workers;
-	std::vector<Unit const * const> m_carts;
-	std::vector<CityTile const * const> m_city_tiles;
-}
+	std::vector<lux::Unit const *> m_workers;
+	std::vector<lux::Unit const *> m_carts;
+	std::vector<lux::CityTile const *> m_city_tiles;
+};
 
 template <class Derived> struct FeatureBuilder {
 
@@ -91,7 +89,7 @@ template <class Derived> struct FeatureBuilder {
 
   template <typename BoardConfig, typename StateFeatureType>
   static void setStateFeatures(const kit::Agent &_env, StateFeatureType &ftrs_) {
-    Derived::template setStateFeaturesImpl<BoardConfig, StateFeatureType>(_game_map, ftrs_);
+    Derived::template setStateFeaturesImpl<BoardConfig, StateFeatureType>(_env, ftrs_);
   }
 };
 
@@ -111,15 +109,15 @@ struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
     ftrs_.m_temporal.index_put_({torch::indexing::Slice(0,
       torch::indexing::None, 1), 0}, remaining);
 		
-		const GameMap &game_map = _env.map;
-		const Player &player = _env.players[_env.id];
-		const Player &opponent = _env.players[(_env.id + 1)%2];
+		const lux::GameMap &game_map = _env.map;
+		const lux::Player &player = _env.players[_env.id];
+		const lux::Player &opponent = _env.players[(_env.id + 1)%2];
 
 		VectorizedUnits units(player, BoardConfig::size*BoardConfig::size);
 		emplace_resources(game_map, units.m_workers, ftrs_.m_geometric);
 
 		const int worker_count = units.m_workers.size();
-		const int ctile_count = units.m_citytiles.size();
+		const int ctile_count = units.m_city_tiles.size();
 
 		const auto up_to_worker_count = torch::indexing::Slice(0, worker_count, 1);
 
@@ -149,7 +147,7 @@ struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
 
     if (worker_count > 0 && ctile_count > 0) {
       torch::Tensor worker_positions(translate_positions(units.m_workers));
-      torch::Tensor ctile_positions(translate_positions(units.m_citytiles));
+      torch::Tensor ctile_positions(translate_positions(units.m_city_tiles));
 
       const torch::Tensor shift_worker_positions =
           static_cast<int>(BoardConfig::size / 2) - worker_positions;
@@ -168,8 +166,7 @@ struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
                                    BoardConfig::size * BoardConfig::size, 0);
 
       const auto distances = std::get<0>(
-          manhattan<BoardConfig::size>(spatial_repeated,
-                                       ending_ctile_positions_interleaved)
+          manhattan(spatial_repeated, ending_ctile_positions_interleaved)
               .reshape({BoardConfig::size, BoardConfig::size, ctile_count,
                         worker_count})
               .min(2));
@@ -280,7 +277,7 @@ struct CartFeatureBuilder : public FeatureBuilder<CartFeatureBuilder> {
 //
 //      ftrs_.m_geometric.index_put_(
 //          {torch::indexing::Slice(0, shipyard_count, 1), 0},
-//          flipped_heats * (1 - remaining) * _board.getPlayerHalite() /
+//          flipped_heats * (1 - remaining) * _board.getlux::PlayerHalite() /
 //              BoardConfig::starting_halite);
 //    }
 //

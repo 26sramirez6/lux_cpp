@@ -1,7 +1,6 @@
 #pragma once
 
 #include "board_config.hpp"
-#include "feature_state.hpp"
 #include "math_util.hpp"
 #include "model_config.hpp"
 #include "template_util.hpp"
@@ -34,7 +33,7 @@ struct BatchStateFeature {
   BatchStateFeature(unsigned _batch_size)
       : m_batch_size(_batch_size),
         m_geometric(torch::zeros({_batch_size, ModelConfig::channels,
-                                  size, size::size},
+                                  size, size},
                                  torch::dtype(torch::kFloat32)
                                      .requires_grad(false)
                                      .device(DeviceType))),
@@ -77,7 +76,7 @@ template <torch::DeviceType DeviceType, std::size_t size,
 struct SingleStateFeature {
   SingleStateFeature()
       : m_geometric(torch::zeros(
-            {ModelConfig::channels, size, size::size},
+            {ModelConfig::channels, size, size},
             torch::dtype(torch::kFloat32)
                 .requires_grad(false)
                 .device(DeviceType))),

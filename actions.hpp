@@ -29,5 +29,6 @@ enum class CityTileActions {
 	//BUILD_CART,
 	RESEARCH,
 	Count
-}
+};
 
+#endif

@@ -12,6 +12,17 @@
 #include <algorithm>
 #include <torch/torch.h>
 
+static inline int manhattan(const int _x1, const int _y1, const int _x2,
+                            const int _y2) {
+  return std::abs(_x2 - _x1) + std::abs(_y2 - _y1);
+}
+
+static inline torch::Tensor manhattan(const torch::Tensor &_spatial,
+                                      const torch::Tensor &_positions) {
+  auto diff = _spatial - _positions;
+  return diff.abs().sum(1);
+}
+
 template <int WrapAround>
 static inline int manhattan(const int _x1, const int _y1, const int _x2,
                             const int _y2) {

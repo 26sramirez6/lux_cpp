@@ -12,11 +12,10 @@
 #include <cmath>
 #include <random>
 #include <type_traits>
-
-#include "pawn_types.hpp"
+#include "replay_buffer.hpp"
 #include "feature_builder.hpp"
 #include "model_config.hpp"
-#include "replay_buffer.hpp"
+#include "pawn_types.hpp"
 
 template <typename Mask, typename RandomEngine>
 static inline void
@@ -113,8 +112,8 @@ template <std::size_t ActorId, torch::DeviceType DeviceType, typename PawnType,
 					typename ModelConfig>
 class MultiStepPawnManager {
 public:
-	using BatchStateFeatures = BatchStateFeature<DeviceType, BoardConfig, ModelConfig>;
-	using FinalBatch = DynamicBatch<DeviceType, BoardConfig, ModelConfig>;
+	using BatchStateFeatures = BatchStateFeature<DeviceType, BoardConfig::size, ModelConfig>;
+	using FinalBatch = DynamicBatch<DeviceType, BoardConfig::size, ModelConfig>;
   MultiStepPawnManager(const std::size_t _multi_step_n, const float _gamma,
                        const std::size_t _batch_size)
       : m_n(_multi_step_n), m_gamma(_gamma), m_batch_size(_batch_size),
@@ -222,7 +221,7 @@ public:
 	void inline resetState() {
 		m_retained_id_indices.zero_();
 		m_destroyed_id_indices.zero_();
-
+		m_one_step_prior_pawns.clear();
 		std::queue<std::vector<int>>().swap(m_multi_step_pawn_ids);
 		std::queue<torch::Tensor>().swap(m_multi_step_actions);
 		std::queue<BatchStateFeatures>().swap(m_multi_step_features);

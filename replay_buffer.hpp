@@ -10,7 +10,6 @@
 
 #include "board_config.hpp"
 #include "data_objects.hpp"
-#include "feature_state.hpp"
 #include "math_util.hpp"
 #include "model_config.hpp"
 #include "template_util.hpp"

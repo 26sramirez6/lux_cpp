@@ -7,6 +7,9 @@
 
 #ifndef TRAINER_HPP_
 #define TRAINER_HPP_
+
+#include <tuple>
+#include "template_util.hpp"
 #include "actor.hpp"
 #include "board_config.hpp"
 #include "dqn.hpp"
@@ -18,18 +21,17 @@
 #include "random_engine.hpp"
 #include "replay_buffer.hpp"
 #include "reward_engine.hpp"
-#include "template_util.hpp"
-#include <tuple>
 
 template <std::size_t ActorCount,
           torch::DeviceType DeviceType, typename RandomEngine>
 class Trainer {
-  using WorkerBatch = DynamicBatch<DeviceType, BoardConfig, WorkerModelConfig>;
+public:
+  using WorkerBatch = DynamicBatch<DeviceType, BoardConfig::size, WorkerModelConfig>;
   using CityTileBatch =
-      DynamicBatch<DeviceType, BoardConfig, CityTileModelConfig>;
-  using WorkerTransition = Transition<DeviceType, BoardConfig, WorkerModelConfig>;
+      DynamicBatch<DeviceType, BoardConfig::size, CityTileModelConfig>;
+  using WorkerTransition = Transition<DeviceType, BoardConfig::size, WorkerModelConfig>;
   using CityTileTransition =
-      Transition<DeviceType, BoardConfig, CityTileModelConfig>;
+      Transition<DeviceType, BoardConfig::size, CityTileModelConfig>;
   using WorkerReplayBuffer = ReplayBuffer<DeviceType, WorkerBatch, WorkerTransition>;
   using CityTileReplayBuffer =
       ReplayBuffer<DeviceType, CityTileBatch, CitytileTransition>;
@@ -53,7 +55,7 @@ class Trainer {
 
   using Actors = std::tuple<ActorType<0>>;
   static_assert(ActorCount == 1, "Unsupported");
-public:
+
 	Trainer(RandomEngine &random_engine_) : 
 		m_worker_dqn(WorkerModelConfig::channels, BoardConfig::size,
 								static_cast<uint64_t>(WorkerAction::Count),

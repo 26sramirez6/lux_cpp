@@ -6,10 +6,10 @@
 #include "lux/kit.hpp"
 
 struct Worker{
-	using type = kit::Unit;
+	using type = lux::Unit;
 	static inline int string_to_id(const std::string& _strId) {
 		char * cstr = (char*) _strId.c_str();
-		return std::stoi(++++_strId);
+		return std::stoi(++++cstr);
 	}
 		
 	static inline std::vector<int> get_pawn_ids(const kit::Agent& _agent) {
@@ -23,9 +23,9 @@ struct Worker{
 		return ids;
 	}
 
-	static inline std::unordered_map<int, kit::Unit> 
-	get_pawns(const kid::Agent& _agent) {
-		std::unordered_map<int, kit::Unit> pawn_map;
+	static inline std::unordered_map<int, lux::Unit> 
+	get_pawns(const kit::Agent& _agent) {
+		std::unordered_map<int, lux::Unit> pawn_map;
 		const auto& player = _agent.players[_agent.id];
 		const auto& units = player.units;
 		for (int i = 0; i < units.size(); i++) {
@@ -38,10 +38,10 @@ struct Worker{
 };
 
 struct CityTile {
-	using type = kit::CityTile;
+	using type = lux::CityTile;
 	static inline int string_to_id(const std::string& _strId) {
 		char * cstr = (char*) _strId.c_str();
-		std::stoi(++++_strId);
+		std::stoi(++++cstr);
 	}
 
 //	static inline std::vector<int> getPawnIds(const kit::Agent& _agent) {
@@ -59,9 +59,10 @@ struct CityTile {
 };
 
 struct Cart {
+	using type = lux::Unit;
 	static inline int string_to_id(const std::string& _strId) {
 		char * cstr = (char*) _strId.c_str();
-		return std::stoi(++++_strId);
+		return std::stoi(++++cstr);
 	}
 
 	static inline std::vector<int> getPawnIds(const kit::Agent& _agent) {
@@ -75,3 +76,4 @@ struct Cart {
 		return ids;
 	}
 };
+#endif

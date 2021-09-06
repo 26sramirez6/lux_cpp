@@ -1,6 +1,6 @@
 #pragma once
 
-#include "board.hpp"
+#include "math_util.hpp"
 #include "board_config.hpp"
 #include "data_objects.hpp"
 #include "hyper_parameters.hpp"
@@ -20,6 +20,35 @@ static inline std::vector<int> get_retained_ids(
 	}
 	return retained;
 }
+
+static inline bool 
+is_closer_to_city(const lux::Player& _player, const lux::Unit& _latest, const lux::Unit& _prior) {
+	if (_player.cities.size()==0) {
+		return false;
+	}
+
+	int prior_min = std::numeric_limits<int>::max();
+	for (const auto &kv : _player.cities) {
+		const auto &ctiles = kv.second;
+		for (const auto &ctile : ctiles) {
+			const int distance = manhattan(_prior.pos.x, _prior.pos.y, ctile.pos.x, ctile.pos.y);
+			prior_min = std::min(prior_min, distance);
+		}
+	}
+
+	int current_min = std::numeric_limits<int>::max();
+	for (const auto &kv : _player.cities) {
+		const auto &ctiles = kv.second;
+		for (const auto &ctile : ctiles) {
+			const int distance =
+				manhattan(_latest.pos.x, _latest.pos.y, ctile.pos.x, ctile.pos.y);
+			current_min = std::min(current_min, distance);
+		}
+	}
+
+	return current_min < prior_min;
+}
+
 
 template <torch::DeviceType DeviceType>
 class WorkerRewardEngine {
@@ -68,90 +97,50 @@ public:
 		const float max_coal_cell = static_cast<float>(_env.getMaxCoal());
 		const float max_uranium_cell = static_cast<float>(_env.getMaxUranium());
     const unsigned step = _env.turn;
-				
+		const auto& player = _env[_env.id];
     const auto retained_ids = get_retained_ids(_latest_worker_map, _prior_worker_map);
 
     for (int i : retained ids) {	
 			const auto& latest_worker = _latest_worker_map[i];
 			const auto& prior_worker = _prior_worker_map[i];
-			const float delta_wood_cargo = (_latest_worker.cargo.wood - _prior_worker.cargo.wood) / max_wood_cell;
-			const float delta_coal_cargo = (_latest_worker.cargo.coal - _prior_worker.cargo.coal) / max_coal_cell;
-  		const float delta_uranium_cargo = (_latest_worker.cargo.uranium - _prior_worker.cargo.uranium) / max_uranium_cell;
+
+			// assumes no transfer
+			const float delta_wood_cargo = (_latest_worker.cargo.wood - _prior_worker.cargo.wood) * wood_to_fuel; 
+
+			const float delta_coal_cargo = (_latest_worker.cargo.coal - _prior_worker.cargo.coal) * coal_to_fuel;
+
+  		const float delta_uranium_cargo = (_latest_worker.cargo.uranium - _prior_worker.cargo.uranium) * uranium_to_fuel;
 
 			const float delta_cargo = delta_wood_cargo + delta_coal_cargo + delta_uranium_cargo;
 
 	    const float mine_reward = clip(
-          m_mine_weights[step] * (kv.second->delta_wood_cargo / max_wood_cell + ),
+          m_mine_weights[step] * delta_cargo,
           m_mine_min_clip, m_mine_max_clip);
+			
+			const Cell * latest_cell = _env.getCellByPos(latest_worker.pos);
+			const Cell * prior_cell = _env.getCellByPos(prior_worker.pos);
 
+			const bool moved_to_city_tile = (prior_cell->citytile==nullptr) && (latest_cell->citytile!=nullptr);
+			
+ 
       const float deposit_reward = clip(
-          m_deposit_weights[step] * (kv.second->delta_halite / max_halite_cell),
+          m_deposit_weights[step] * (moved_to_city_tile ? -delta_cargo : 0),
           m_deposit_min_clip, m_deposit_max_clip);
 
-      const float distance_reward = (kv.second->cargo > 0 && kv.second->closer)
-                                        ? m_distance_weights[step]
-                                        : 0;
+			const bool is_closer_to_city = delta_cargo > 0 && is_closer_to_city(player, latest_worker, prior_worker);
+      const float distance_reward = is_closer_to_city ? m_distance_weights[step]: 0;
 
-      const float discovery_reward = clip(
-          static_cast<int>(kv.second->action != ShipAction::NONE) *
-              m_discovery_weights[step] *
-              (_current_board.getHaliteAtPoint(kv.second->x, kv.second->y) /
-               max_halite_cell),
-          m_discovery_min_clip, m_discovery_max_clip);
-
+//      const float discovery_reward = clip(
+//          static_cast<int>(kv.second->action != ShipAction::NONE) *
+//              m_discovery_weights[step] *
+//              (_current_board.getHaliteAtPoint(kv.second->x, kv.second->y) /
+//               max_halite_cell),
+//          m_discovery_min_clip, m_discovery_max_clip);
+//
       reward_map_.insert({kv.first, mine_reward + deposit_reward +
-                                        distance_reward + discovery_reward});
+                                        distance_reward});
 
     }
-  }
-
-  template <unsigned ActorId, typename Env, typename BatchType>
-  inline void computeRewards(const Env &_env, BatchType &batch_) {
-    batch_.m_reward.zero_();
-    const float max_halite_cell =
-        _current_board.getMaxHaliteCell().template to<float>();
-    const float max_halite_mineable =
-        max_halite_cell * BoardConfig::collect_rate;
-
-    const unsigned step = _current_board.getStep();
-    const auto &retained_ships =
-        _current_board.template getRetainedShips<ActorId>();
-    const unsigned ship_count = retained_ships.size();
-
-    int i = 0;
-    auto a = m_rewards_on_cpu.template accessor<float, 1>();
-    for (const auto &kv : retained_ships) {
-      const float mine_reward = clip(
-          m_mine_weights[step] * (kv.second->delta_cargo / max_halite_mineable),
-          m_mine_min_clip, m_mine_max_clip);
-
-      const float deposit_reward = clip(
-          m_deposit_weights[step] * (kv.second->delta_halite / max_halite_cell),
-          m_deposit_min_clip, m_deposit_max_clip);
-
-      const float distance_reward = (kv.second->cargo > 0 && kv.second->closer)
-                                        ? m_distance_weights[step]
-                                        : 0;
-
-      const float discovery_reward = clip(
-          static_cast<int>(kv.second->action != ShipAction::NONE) *
-              m_discovery_weights[step] *
-              (_current_board.getHaliteAtPoint(kv.second->x, kv.second->y) /
-               max_halite_cell),
-          m_discovery_min_clip, m_discovery_max_clip);
-
-      a[i++] =
-          mine_reward + deposit_reward + distance_reward + discovery_reward;
-    }
-
-    const auto slice = torch::indexing::Slice(0, ship_count, 1);
-    batch_.m_reward.index_put_(
-        {slice}, m_rewards_on_cpu.index({slice}).to(
-                     DeviceType, /* nonblocking */ false, /*copy*/ false));
-
-    m_rewards_on_cpu.zero_();
-    // std::cout << "reward from batch after zero: " <<
-    // batch_.m_reward.index({0}) << std::endl;
   }
 
   static inline std::vector<float>

@@ -21,9 +21,9 @@ using is_equiv = std::is_same<T, remove_cv_ref<U>>;
 // the following breaks for visual c++ compilers (tested on version VS15)
 #ifndef _MSC_VER
 namespace detail {
-template <bool...> struct bool_pack;
-template <bool... bs>
-using all_true = std::is_same<bool_pack<bs..., true>, bool_pack<true, bs...>>;
+	template <bool...> struct bool_pack;
+	template <bool... bs>
+	using all_true = std::is_same<bool_pack<bs..., true>, bool_pack<true, bs...>>;
 } // namespace detail
 template <typename... Ts> using all_true = detail::all_true<Ts::value...>;
 
