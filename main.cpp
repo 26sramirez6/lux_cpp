@@ -20,10 +20,57 @@
 #include "random_engine.hpp"
 #include "actions.hpp"
 
+static inline void print_board(const kit::Agent& _env) {
+	std::stringstream ss;
+	const auto& player = _env.players[_env.id];
+	const auto& cities = player.cities;
+		
+	const auto& units = player.units;
+	std::unordered_set<const lux::Cell*> unit_cells;	
+	const auto& map = _env.map;
+
+	for (const auto& unit : units) {
+		unit_cells.insert(map.getCellByPos(unit.pos));
+	}
+	
+	ss << "E: " << _env.turn << " F: " << player.getFuel() << " WC: " << player.getWoodCargo() << " U: " << units.size() << " CT: " << player.cityTileCount << " RP: " << player.researchPoints << std::endl;
+	for (int y = 0; y < BoardConfig::size; ++y) {
+		for (int x = 0; x < BoardConfig::size; ++x) {
+			ss << "|";
+			const auto& cell = map.getCell(x,y);
+			if (unit_cells.find(cell) != unit_cells.end()) {
+				ss << "a";		
+			} else {
+				ss << " ";
+			}			
+			if (cell->hasResource()) {
+				if (cell->resource.type==lux::ResourceType::wood) {
+					ss << 1;
+				} else if (cell->resource.type==lux::ResourceType::coal) { 
+					ss << 2;
+				} else {
+					ss << 3;
+				}
+			} else {
+				ss << 0;
+			}
+
+			if (cell->citytile != nullptr && cell->citytile->team==_env.id) {
+				ss << "A";
+			} else {
+				ss << " ";
+			}
+		}
+		ss << "|\n";	
+	}
+	std::cout << ss.str() << std::endl;
+}
+
+
 static inline bool wait_for_next_msg(char * membuf_) {
 	*membuf_ = ack_input_received;
 	while (*membuf_==ack_input_received) {};
-	std::cout << "server received: " << membuf_ << std::endl;
+//	std::cout << "server received: " << membuf_ << std::endl;
 	return *membuf_==game_start_key;
 }
 
@@ -153,6 +200,7 @@ int main() {
 				continue;
 			}
 			agent.updateServer(membuf);
+			print_board(agent);
 			const auto actions = trainer.processEpisode(agent, random_engine, frame, episode);
 			send_actions(agent, actions, membuf);
 			std::cout << "sent actions: " << membuf << std::endl;					

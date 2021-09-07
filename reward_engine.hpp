@@ -114,14 +114,17 @@ public:
 			const auto& prior_worker = prior_worker_map.at(i);
 
 			// assumes no transfer
-			const float delta_wood_cargo = (latest_worker.cargo.wood - prior_worker.cargo.wood) * BoardConfig::wood_to_fuel; 
+			const float delta_wood_cargo = (latest_worker.cargo.wood - prior_worker.cargo.wood) * static_cast<float>(BoardConfig::wood_to_fuel); 
 
-			const float delta_coal_cargo = (latest_worker.cargo.coal - prior_worker.cargo.coal) * BoardConfig::coal_to_fuel;
+			const float delta_coal_cargo = (latest_worker.cargo.coal - prior_worker.cargo.coal) * static_cast<float>(BoardConfig::coal_to_fuel);
 
-  		const float delta_uranium_cargo = (latest_worker.cargo.uranium - prior_worker.cargo.uranium) * BoardConfig::uranium_to_fuel;
+  		const float delta_uranium_cargo = (latest_worker.cargo.uranium - prior_worker.cargo.uranium) * static_cast<float>(BoardConfig::uranium_to_fuel);
+			std::cout << "latest wood: " << latest_worker.cargo.wood << ", prior wood: " << prior_worker.cargo.wood << std::endl;
+			std::cout << "latest coal: " << latest_worker.cargo.coal << ", prior coal: " << prior_worker.cargo.coal << std::endl;
+			std::cout << "latest uranium: " << latest_worker.cargo.uranium << ", prior uranium: " << prior_worker.cargo.uranium << std::endl;
 
 			const float delta_cargo = delta_wood_cargo + delta_coal_cargo + delta_uranium_cargo;
-
+			
 	    const float mine_reward = clip(
           m_mine_weights[step] * delta_cargo,
           m_mine_min_clip, m_mine_max_clip);
@@ -131,10 +134,17 @@ public:
 
 			const bool moved_to_city_tile = (prior_cell->citytile==nullptr) && (latest_cell->citytile!=nullptr);
 			
- 
+			// assumes no transfer		
+			const float night_penalty = (!moved_to_city_tile && delta_cargo < 0) ? 
+				clip(m_mine_weights[step] * delta_cargo, HyperParameters::m_reward_night_min_clip, HyperParameters::m_reward_night_max_clip) : 0;
+
+			std::cout << "night_penalty: " << night_penalty << std::endl;
+
       const float deposit_reward = clip(
           m_deposit_weights[step] * (moved_to_city_tile ? -delta_cargo : 0),
           m_deposit_min_clip, m_deposit_max_clip);
+
+ 			std::cout << "deposit_reward: " << deposit_reward << ", delta cargo: " << delta_cargo << ", moved to city: " << moved_to_city_tile << std::endl;
 
 			const bool is_closer = delta_cargo > 0 && is_closer_to_city(player, latest_worker, prior_worker);
       const float distance_reward = is_closer ? m_distance_weights[step]: 0;
@@ -147,7 +157,7 @@ public:
 //          m_discovery_min_clip, m_discovery_max_clip);
 //
       reward_map_.insert({i, mine_reward + deposit_reward +
-                                        distance_reward});
+                                        distance_reward + night_penalty});
 
     }
   }

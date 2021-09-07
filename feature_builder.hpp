@@ -117,8 +117,9 @@ struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
 
 		const int worker_count = units.m_workers.size();
 		const int ctile_count = units.m_city_tiles.size();
+		const auto up_to_worker_count = torch::indexing::Slice(0, worker_count, 1);
+		torch::Tensor worker_cargo;
 		if (worker_count > 0) {
-			const auto up_to_worker_count = torch::indexing::Slice(0, worker_count, 1);
 
 			ftrs_.m_geometric.index_put_(
 					{up_to_worker_count, 3}, remaining);
@@ -136,7 +137,7 @@ struct WorkerFeatureBuilder : public FeatureBuilder<WorkerFeatureBuilder> {
 				ftrs_.m_geometric.index({up_to_worker_count, 2}).fill_(0.f);
 			}
 
-			torch::Tensor worker_cargo(torch::zeros({worker_count}, torch::dtype(torch::kFloat32).requires_grad(false)));
+			worker_cargo = torch::zeros({worker_count}, torch::dtype(torch::kFloat32).requires_grad(false));
 			auto accessor = worker_cargo.accessor<float,1>();
 			for (int i = 0; i < worker_count; ++i) {
 				const float cargo = static_cast<float>(units.m_workers[i]->getCargoSpaceLeft()) / static_cast<float>(BoardConfig::worker_max_cargo);

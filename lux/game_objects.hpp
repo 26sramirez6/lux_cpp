@@ -110,10 +110,24 @@ namespace lux
         {
             return this->researchPoints >= (int)GAME_CONSTANTS["PARAMETERS"]["RESEARCH_REQUIREMENTS"]["COAL"];
         }
-        bool researchedUranium()const
+        bool researchedUranium() const
         {
             return this->researchPoints >= (int)GAME_CONSTANTS["PARAMETERS"]["RESEARCH_REQUIREMENTS"]["URANIUM"];
         }
+				float getFuel() const {
+					float fuel = 0;
+					for (const auto& kv : cities) {
+						fuel += kv.second.fuel;
+					}
+					return fuel;
+				}
+				int getWoodCargo() const {
+					int wood_cargo = 0;
+					for (const auto& unit : units) {
+						wood_cargo += unit.cargo.wood;
+					}
+					return wood_cargo;
+				}
     };
 };
 #endif

@@ -31,8 +31,8 @@ struct HyperParameters {
 
   static constexpr std::size_t m_nn_target_model_update = 5000;
 
-  static constexpr float m_reward_mine_beta = 2.;
-  static constexpr float m_reward_deposit_beta = 0.;   // 3.;
+  static constexpr float m_reward_mine_beta = 1.;
+  static constexpr float m_reward_deposit_beta = 1.;   // 3.;
   static constexpr float m_reward_distance_beta = 0.;  //.05;
   static constexpr float m_reward_discovery_beta = 0.; // 2.;
   static constexpr float m_reward_mine_time_beta = .5;
@@ -40,13 +40,16 @@ struct HyperParameters {
   static constexpr float m_reward_distance_time_beta = .5;
   static constexpr float m_reward_discovery_time_beta = .25;
   static constexpr float m_reward_mine_min_clip = 0.;
-  static constexpr float m_reward_mine_max_clip = 5.;
+  static constexpr float m_reward_mine_max_clip = 1000.;
   static constexpr float m_reward_deposit_min_clip = 0.;
-  static constexpr float m_reward_deposit_max_clip = 3.;
+  static constexpr float m_reward_deposit_max_clip = 1000.;
   static constexpr float m_reward_distance_min_clip = 0.;
   static constexpr float m_reward_distance_max_clip = 1.;
   static constexpr float m_reward_discovery_min_clip = 0.;
   static constexpr float m_reward_discovery_max_clip = .25;
+
+	static constexpr float m_reward_night_min_clip = -1000;
+	static constexpr float m_reward_night_max_clip = 0;
 };
 
 #endif /* HYPER_PARAMETERS_HPP_ */

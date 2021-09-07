@@ -35,6 +35,27 @@ struct Worker{
 		}
 		return pawn_map;
 	}
+
+	static inline void
+	clean_actions(const kit::Agent &_agent, Eigen::Ref<Eigen::ArrayXi> actions_) {
+		const auto& player = _agent.players[_agent.id];
+		const auto& units = player.units;
+		// assumes units are ordered same as actions
+		for (int i = 0; i < units.size(); ++i) {
+			const auto& unit = units[i];
+			int& action = actions_(i);
+						
+			if (!unit.canAct() ||
+					(action==WorkerActionInt::build && !unit.canBuild(_agent.map)) ||
+					(unit.pos.x==0 && action==WorkerActionInt::west) ||
+					(unit.pos.x==BoardConfig::size-1 && action==WorkerActionInt::east) ||
+					(unit.pos.y==0 && action==WorkerActionInt::north) ||
+					(unit.pos.y==BoardConfig::size-1 && action==WorkerActionInt::south) 
+				) {
+				action = WorkerActionInt::center;
+			} 
+		}
+	}
 };
 
 struct CityTile {

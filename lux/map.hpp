@@ -23,7 +23,7 @@ namespace lux
     public:
         Position pos = Position(-1, -1);
         Resource resource;
-        lux::CityTile * citytile;
+        lux::CityTile * citytile = nullptr;
         float road = 0.0;
         Cell(){};
         Cell(int x, int y)

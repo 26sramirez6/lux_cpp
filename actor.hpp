@@ -259,7 +259,7 @@ private:
 
 		std::cout << "pushing rewards: ";
 		for(auto& kv : reward_map) {
-			std::cout << kv.first << ", " << kv.second << std::endl; 
+			std::cout << kv.first << ": " << kv.second << std::endl; 
 		}
 		std::cout << std::endl;
 
@@ -387,6 +387,7 @@ private:
   FinalBatch m_final_batch;
 };
 
+
 template <std::size_t ActorId, torch::DeviceType DeviceType,
           typename BoardConfig, typename WorkerModelConfig,
           typename CityTileModelConfig, typename WorkerFeatureBuilder,
@@ -466,27 +467,28 @@ public:
 
     if (any_obj && isEpsilonFrame(random_engine_)) {
       if (any_workers) {
-        std::cout << "m_worker_action_recorder" << std::endl;
-        std::cout << m_worker_action_recorder << std::endl;
+//        std::cout << "m_worker_action_recorder" << std::endl;
+//        std::cout << m_worker_action_recorder << std::endl;
         Eigen::ArrayXf probs = (m_worker_action_recorder.sum() -
                                 m_worker_action_recorder.head(5));
 				probs *= probs;
         probs /= probs.sum();
 				
-        std::cout << "probs:" << std::endl;
-        std::cout << probs << std::endl;
+//        std::cout << "probs:" << std::endl;
+//        std::cout << probs << std::endl;
         choice(random_engine_, probs,
                m_best_worker_actions.head(latest_worker_count));
-        std::cout << "choice: " << m_best_worker_actions.head(latest_worker_count)
-                  << std::endl;
+//        std::cout << "choice: " << m_best_worker_actions.head(latest_worker_count)
+//                  << std::endl;
 
-        const int max_citytiles_allowed = any_citytiles ? 0 : 1;
-        limit_actions_by_choice<true>(
-            random_engine_, max_citytiles_allowed,
-            static_cast<int>(WorkerActions::BUILD),
-            m_cumsum.head(latest_worker_count),
-            m_new_random_actions.head(latest_worker_count),
-            m_best_worker_actions.head(latest_worker_count));
+//        const int max_citytiles_allowed = any_citytiles ? 0 : 1;
+//        limit_actions_by_choice<true>(
+//            random_engine_, max_citytiles_allowed,
+//            static_cast<int>(WorkerActions::BUILD),
+//            m_cumsum.head(latest_worker_count),
+//            m_new_random_actions.head(latest_worker_count),
+//            m_best_worker_actions.head(latest_worker_count));
+				Worker::clean_actions(_env, m_best_worker_actions.head(latest_worker_count));
       }
 
       if (any_citytiles) {
@@ -526,13 +528,14 @@ public:
         torch::Tensor argmax = std::get<1>(q_current.max(1));
 
         tensor_to_eigen<int64_t>(argmax, m_best_worker_actions);
-        const int max_citytiles_allowed =
-            latest_citytile_count == 0 ? 1 : 0;
-
-        limit_actions_by_q<true>(
-            max_citytiles_allowed, static_cast<int>(WorkerActions::BUILD),
-            m_cumsum.head(latest_worker_count),
-            m_best_worker_actions.head(latest_worker_count), q_current);
+//        const int max_citytiles_allowed =
+//            latest_citytile_count == 0 ? 1 : 0;
+//
+//        limit_actions_by_q<true>(
+//            max_citytiles_allowed, static_cast<int>(WorkerActions::BUILD),
+//            m_cumsum.head(latest_worker_count),
+//            m_best_worker_actions.head(latest_worker_count), q_current);
+				Worker::clean_actions(_env, m_best_worker_actions.head(latest_worker_count));
         std::cout << "ACTOR Q current: " << std::endl;
         std::cout << q_current << std::endl;
       }

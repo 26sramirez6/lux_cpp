@@ -13,6 +13,15 @@ enum class WorkerActions {
 	Count
 };
 
+struct WorkerActionInt {
+	static constexpr int center = 0;
+	static constexpr int north = 1;
+	static constexpr int east = 2;
+	static constexpr int south = 3;
+	static constexpr int west = 4;
+	static constexpr int build = 5;
+};
+
 enum class CartActions {
 	CENTER,
 	NORTH,
