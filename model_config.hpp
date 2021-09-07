@@ -12,7 +12,7 @@ struct BaseModelConfig {};
 
 struct WorkerModelConfig : public BaseModelConfig {
   constexpr static std::size_t ts_ftr_count = 2;
-  constexpr static std::size_t channels = 5;
+  constexpr static std::size_t channels = 6;
   constexpr static std::size_t output_size = 8;
 	enum Channels {
 		WOOD,

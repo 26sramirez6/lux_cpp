@@ -9,7 +9,13 @@
 #include <iostream>
 #include "lux/kit.hpp"
 #include "lux/define.cpp"
+#include "hyper_parameters.hpp"
+#include "train_config.hpp"
+#include "board_config.hpp"
+#include "actor.hpp"
 #include "server.hpp"
+#include "dqn.hpp"
+#include "model_learner.hpp"
 #include "trainer.hpp"
 #include "random_engine.hpp"
 #include "actions.hpp"
@@ -34,6 +40,7 @@ static inline void initialize_game(kit::Agent& agent_, char * membuf_) {
 	agent_.mapWidth = std::stoi(map_parts[0]);
 	agent_.mapHeight = std::stoi(map_parts[1]);
 	agent_.map = lux::GameMap(agent_.mapWidth, agent_.mapHeight);
+	agent_.turn = 0;
 	std::cout << "initialized game: id " << agent_.id << ", " << agent_.mapWidth << ", " << agent_.mapHeight << std::endl;
 }
 
@@ -55,7 +62,7 @@ static inline void send_actions(
 		if (!unit.canAct()) continue;
 		if (i!=0) ss << ",";
 		const auto action = static_cast<WorkerActions>(worker_actions(i));
-		switch (worker_actions) {
+		switch (action) {
 		case WorkerActions::CENTER:
 			ss << unit.move(lux::DIRECTIONS::CENTER);
 			break;
@@ -90,8 +97,8 @@ static inline void send_actions(
 		for (const auto& ctile : city.citytiles) {
 			if (!ctile.canAct()) continue;
 			if (i != 0) ss << ",";
-			const auto action = ctile_actions(i++);
-			switch (ctile_actions) {
+			const auto action = static_cast<CityTileActions>(ctile_actions(i++));
+			switch (action) {
 			case CityTileActions::BUILD_WORKER:
 				ss << ctile.buildWorker();
 				break;
@@ -105,7 +112,7 @@ static inline void send_actions(
 		}
 	}	
 
-	ss << "D_FINISH\n";
+	ss << "\nD_FINISH\n";
 	const std::string str(ss.str());
 	const char * cstr = str.c_str();
 	strcpy(membuf_, cstr);
@@ -128,11 +135,11 @@ static char * initialize_memory_map() {
 }
 
 
-main() {
+int main() {
 		char *membuf = initialize_memory_map();
 		kit::Agent agent = kit::Agent();
 		auto &random_engine = RandomEngine<float, TrainConfig::train_seed>::getInstance();
-		auto trainer = Trainer<BoardConfig::actor_count, TrainConfig::device, decltype(random_engine)>(random_engine); 
+		Trainer<BoardConfig::actor_count, TrainConfig::device, decltype(random_engine)> trainer; 
 		
 		std::size_t episode = 0;
 		std::size_t frame = 0;
@@ -140,19 +147,18 @@ main() {
 			bool is_new_game = wait_for_next_msg(membuf);
 
 			if (is_new_game)	{
-				agent.resetPlayerStates();
 				trainer.resetState();
 				initialize_game(agent, membuf);
 				episode = 0;
 				continue;
 			}
 			agent.updateServer(membuf);
-			const auto actions = trainer.processEpisode(agent, frame, episode);
-			send_actions(actions, membuf);
+			const auto actions = trainer.processEpisode(agent, random_engine, frame, episode);
+			send_actions(agent, actions, membuf);
 			std::cout << "sent actions: " << membuf << std::endl;					
 			wait_for_client_to_forward_actions(membuf);
 			episode++; frame++;
 			std::cout << "completed episode: " << episode << std::endl;
 		}
-    exit(0);
+    return 0;
 }

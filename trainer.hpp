@@ -9,12 +9,13 @@
 #define TRAINER_HPP_
 
 #include <tuple>
+#include "actions.hpp"
 #include "template_util.hpp"
+#include "hyper_parameters.hpp"
 #include "actor.hpp"
 #include "board_config.hpp"
 #include "dqn.hpp"
 #include "feature_builder.hpp"
-#include "hyper_parameters.hpp"
 #include "math_util.hpp"
 #include "model_config.hpp"
 #include "model_learner.hpp"
@@ -34,9 +35,9 @@ public:
       Transition<DeviceType, BoardConfig::size, CityTileModelConfig>;
   using WorkerReplayBuffer = ReplayBuffer<DeviceType, WorkerBatch, WorkerTransition>;
   using CityTileReplayBuffer =
-      ReplayBuffer<DeviceType, CityTileBatch, CitytileTransition>;
-  using WorkerRewardEngine = WorkerRewardEngine<DeviceType, BoardConfig>;
-  using CityTileRewardEngine = WorkerRewardEngine<DeviceType, BoardConfig>;
+      ReplayBuffer<DeviceType, CityTileBatch, CityTileTransition>;
+//  using WorkerRewardEngine = WorkerRewardEngine<DeviceType>;
+//  using CityTileRewardEngine = WorkerRewardEngine<DeviceType>;
 
 	using ActionReturn = std::tuple<
 		const Eigen::Ref<const Eigen::ArrayXi>,
@@ -50,41 +51,39 @@ public:
   using ActorType =
       Actor<ActorId, DeviceType, BoardConfig, WorkerModelConfig,
             CityTileModelConfig, WorkerFeatureBuilder, CityTileFeatureBuilder,
-            WorkerRewardEngine, CityTileRewardEngine, WorkerReplayBuffer,
+            WorkerRewardEngine<DeviceType>, CityTileRewardEngine<DeviceType>, WorkerReplayBuffer,
             CityTileReplayBuffer, RandomEngine>;
 
   using Actors = std::tuple<ActorType<0>>;
   static_assert(ActorCount == 1, "Unsupported");
 
-	Trainer(RandomEngine &random_engine_) : 
+	Trainer() : 
 		m_worker_dqn(WorkerModelConfig::channels, BoardConfig::size,
-								static_cast<uint64_t>(WorkerAction::Count),
+								static_cast<uint64_t>(WorkerActions::Count),
 								HyperParameters::m_nn_std_init,
 								HyperParameters::m_nn_atom_count,
-								HyperParameters::m_nn_v_min, HyperParameters.m_nn_v_max),
+								HyperParameters::m_nn_v_min, HyperParameters::m_nn_v_max),
 	  m_citytile_dqn(CityTileModelConfig::channels, BoardConfig::size,
-                   static_cast<uint64_t>(CityTileAction::Count)),
+                   static_cast<uint64_t>(CityTileActions::Count)),
     m_worker_model_learner(
-        worker_dqn, unsigned(WorkerModelConfig::channels),
-        unsigned(BoardConfig::size), static_cast<uint64_t>(WorkerAction::Count),
+        m_worker_dqn, unsigned(WorkerModelConfig::channels),
+        unsigned(BoardConfig::size), static_cast<uint64_t>(WorkerActions::Count),
         HyperParameters::m_nn_std_init, HyperParameters::m_nn_atom_count,
         HyperParameters::m_nn_v_min, HyperParameters::m_nn_v_max),
-    m_citytile_model_learner(citytile_dqn,
+    m_citytile_model_learner(m_citytile_dqn,
                            unsigned(CityTileModelConfig::channels),
                            unsigned(BoardConfig::size),
-                           static_cast<uint64_t>(CityTileAction::Count));
-		m_worker_feature_builder(),
-		m_citytile_feature_builder(),
+                           static_cast<uint64_t>(CityTileActions::Count)),
 		
     m_worker_replay_buffer(
         HyperParameters::m_replay_capacity,
-        HyperParameters::m_replay_batch_size, HyperParameters.m_replay_alpha,
-        HyperParameters::m_replay_beta, HyperParameters.m_replay_beta_decay),
+        HyperParameters::m_replay_batch_size, HyperParameters::m_replay_alpha,
+        HyperParameters::m_replay_beta, HyperParameters::m_replay_beta_decay),
 
     m_citytile_replay_buffer(
         HyperParameters::m_replay_capacity,
-        HyperParameters::m_replay_batch_size, HyperParameters.m_replay_alpha,
-        HyperParameters::m_replay_beta, HyperParameters.m_replay_beta_decay),
+        HyperParameters::m_replay_batch_size, HyperParameters::m_replay_alpha,
+        HyperParameters::m_replay_beta, HyperParameters::m_replay_beta_decay),
 
     m_worker_reward_engine(),
     m_citytile_reward_engine(),
@@ -93,16 +92,16 @@ public:
         HyperParameters::m_actor_epsilon_decay,
         HyperParameters::m_actor_epsilon_start,
         HyperParameters::m_actor_epsilon_end,
-        HyperParameters::m_nn_atom_count, HyperParameters.m_nn_v_min,
-        HyperParameters::m_nn_v_max, HyperParameters.m_nn_step_size,
-        HyperParameters::m_nn_gamma, HyperParameters.m_replay_batch_size))
+        HyperParameters::m_nn_atom_count, HyperParameters::m_nn_v_min,
+        HyperParameters::m_nn_v_max, HyperParameters::m_nn_step_size,
+        HyperParameters::m_nn_gamma, HyperParameters::m_replay_batch_size))
 
  	{
 		m_worker_dqn.to(DeviceType);
 		m_citytile_dqn.to(DeviceType);
 	}
 	
-  inline ActionReturn processEpisode(const kit::Agent& _agent,
+  inline ActionReturn processEpisode(const kit::Agent& _agent, RandomEngine& random_engine_,
 		 const std::size_t _frame, const std::size_t _episode) {
 
 		auto &actor0 = std::get<0>(m_actors);
@@ -110,8 +109,8 @@ public:
 													m_citytile_replay_buffer, m_worker_reward_engine,
 													m_citytile_reward_engine, random_engine_);
 		
-		if (frame > HyperParameters::m_replay_capacity) {
-			worker_model_trainer.train(frame, worker_replay_buffer, random_engine_);
+		if (_frame > HyperParameters::m_replay_capacity) {
+			m_worker_model_learner.train(_frame, m_worker_replay_buffer, random_engine_);
 			// citytile_model_trainer.train(frame, citytile_replay_buffer,
 			// random_engine_);
 		}
@@ -129,18 +128,16 @@ private:
 	CityTileDQN m_citytile_dqn;
 
   ModelLearner<WorkerDQN, DeviceType,
-                 static_cast<std::size_t>(WorkerAction::Count)>
+                 static_cast<std::size_t>(WorkerActions::Count)>
     m_worker_model_learner;
   ModelLearner<CityTileDQN, DeviceType,
-                 static_cast<std::size_t>(CityTileAction::Count)>
+                 static_cast<std::size_t>(CityTileActions::Count)>
     m_citytile_model_learner;
 
-	WorkerFeatureBuilder m_worker_feature_builder;
-  CityTileFeatureBuilder m_citytile_feature_builder;
   WorkerReplayBuffer m_worker_replay_buffer;
   CityTileReplayBuffer m_citytile_replay_buffer;
-  WorkerRewardEngine m_worker_reward_engine;
-  CityTileRewardEngine m_citytile_reward_engine;
+  WorkerRewardEngine<DeviceType> m_worker_reward_engine;
+  CityTileRewardEngine<DeviceType> m_citytile_reward_engine;
   Actors m_actors;
 };
 

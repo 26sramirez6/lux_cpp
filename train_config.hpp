@@ -8,7 +8,7 @@
 #ifndef TRAIN_CONFIG_HPP_
 #define TRAIN_CONFIG_HPP_
 #include <cstdint>
-
+#include <torch/torch.h>
 #ifndef USE_CUDA
 #define DEVICE torch::kCPU
 #else

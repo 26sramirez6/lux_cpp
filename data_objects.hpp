@@ -137,8 +137,7 @@ struct DynamicBatch {
     m_reward.zero_();
   }
 
-  template <typename... T>
-  void set(const int _index, const Transition<DeviceType, T...> &_example) {
+  void set(const int _index, const Transition<DeviceType, size, ModelConfig> &_example) {
     // b, c, h, w
     // geometric[_index]
     m_state.m_geometric.index_put_({_index}, _example.m_state.m_geometric);

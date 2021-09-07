@@ -29,7 +29,7 @@ is_closer_to_city(const lux::Player& _player, const lux::Unit& _latest, const lu
 
 	int prior_min = std::numeric_limits<int>::max();
 	for (const auto &kv : _player.cities) {
-		const auto &ctiles = kv.second;
+		const auto &ctiles = kv.second.citytiles;
 		for (const auto &ctile : ctiles) {
 			const int distance = manhattan(_prior.pos.x, _prior.pos.y, ctile.pos.x, ctile.pos.y);
 			prior_min = std::min(prior_min, distance);
@@ -38,7 +38,7 @@ is_closer_to_city(const lux::Player& _player, const lux::Unit& _latest, const lu
 
 	int current_min = std::numeric_limits<int>::max();
 	for (const auto &kv : _player.cities) {
-		const auto &ctiles = kv.second;
+		const auto &ctiles = kv.second.citytiles;
 		for (const auto &ctile : ctiles) {
 			const int distance =
 				manhattan(_latest.pos.x, _latest.pos.y, ctile.pos.x, ctile.pos.y);
@@ -49,11 +49,20 @@ is_closer_to_city(const lux::Player& _player, const lux::Unit& _latest, const lu
 	return current_min < prior_min;
 }
 
+template <torch::DeviceType DeviceType>
+class CityTileRewardEngine {
+  template <std::size_t ActorId, typename Env>
+  inline void computeRewards(const Env &_env, const std::unordered_map<int, lux::Unit>& latest_worker_map, const std::unordered_map<int, lux::Unit>& prior_worker_map,
+			std::unordered_map<int, float> &reward_map_) {
+		return;
+	}
+};
+
 
 template <torch::DeviceType DeviceType>
 class WorkerRewardEngine {
 public:
-  RewardEngine()
+  WorkerRewardEngine()
       : m_mine_beta(HyperParameters::m_reward_mine_beta),
         m_deposit_beta(HyperParameters::m_reward_deposit_beta),
         m_distance_beta(HyperParameters::m_reward_distance_beta),
@@ -90,26 +99,26 @@ public:
 	
   template <std::size_t ActorId, typename Env>
   inline void computeRewards(
-			const Env &_env, const std::unordered_map<int, kit::Unit>& _latest_worker_map, const std::unordered_map<int, kit::Unit>& _prior_worker_map,
+			const Env &_env, const std::unordered_map<int, lux::Unit>& latest_worker_map, const std::unordered_map<int, lux::Unit>& prior_worker_map,
 			std::unordered_map<int, float> &reward_map_) {
 
-    const float max_wood_cell = static_cast<float>(_env.getMaxWood());
-		const float max_coal_cell = static_cast<float>(_env.getMaxCoal());
-		const float max_uranium_cell = static_cast<float>(_env.getMaxUranium());
+//    const float max_wood_cell = static_cast<float>(_env.getMaxWood());
+//		const float max_coal_cell = static_cast<float>(_env.getMaxCoal());
+//		const float max_uranium_cell = static_cast<float>(_env.getMaxUranium());
     const unsigned step = _env.turn;
-		const auto& player = _env[_env.id];
-    const auto retained_ids = get_retained_ids(_latest_worker_map, _prior_worker_map);
+		const auto& player = _env.players[_env.id];
+    const auto retained_ids = get_retained_ids(latest_worker_map, prior_worker_map);
 
-    for (int i : retained ids) {	
-			const auto& latest_worker = _latest_worker_map[i];
-			const auto& prior_worker = _prior_worker_map[i];
+    for (const int i : retained_ids) {	
+			const auto& latest_worker = latest_worker_map.at(i);
+			const auto& prior_worker = prior_worker_map.at(i);
 
 			// assumes no transfer
-			const float delta_wood_cargo = (_latest_worker.cargo.wood - _prior_worker.cargo.wood) * wood_to_fuel; 
+			const float delta_wood_cargo = (latest_worker.cargo.wood - prior_worker.cargo.wood) * BoardConfig::wood_to_fuel; 
 
-			const float delta_coal_cargo = (_latest_worker.cargo.coal - _prior_worker.cargo.coal) * coal_to_fuel;
+			const float delta_coal_cargo = (latest_worker.cargo.coal - prior_worker.cargo.coal) * BoardConfig::coal_to_fuel;
 
-  		const float delta_uranium_cargo = (_latest_worker.cargo.uranium - _prior_worker.cargo.uranium) * uranium_to_fuel;
+  		const float delta_uranium_cargo = (latest_worker.cargo.uranium - prior_worker.cargo.uranium) * BoardConfig::uranium_to_fuel;
 
 			const float delta_cargo = delta_wood_cargo + delta_coal_cargo + delta_uranium_cargo;
 
@@ -117,8 +126,8 @@ public:
           m_mine_weights[step] * delta_cargo,
           m_mine_min_clip, m_mine_max_clip);
 			
-			const Cell * latest_cell = _env.getCellByPos(latest_worker.pos);
-			const Cell * prior_cell = _env.getCellByPos(prior_worker.pos);
+			const lux::Cell * latest_cell = _env.map.getCellByPos(latest_worker.pos);
+			const lux::Cell * prior_cell = _env.map.getCellByPos(prior_worker.pos);
 
 			const bool moved_to_city_tile = (prior_cell->citytile==nullptr) && (latest_cell->citytile!=nullptr);
 			
@@ -127,8 +136,8 @@ public:
           m_deposit_weights[step] * (moved_to_city_tile ? -delta_cargo : 0),
           m_deposit_min_clip, m_deposit_max_clip);
 
-			const bool is_closer_to_city = delta_cargo > 0 && is_closer_to_city(player, latest_worker, prior_worker);
-      const float distance_reward = is_closer_to_city ? m_distance_weights[step]: 0;
+			const bool is_closer = delta_cargo > 0 && is_closer_to_city(player, latest_worker, prior_worker);
+      const float distance_reward = is_closer ? m_distance_weights[step]: 0;
 
 //      const float discovery_reward = clip(
 //          static_cast<int>(kv.second->action != ShipAction::NONE) *
@@ -137,7 +146,7 @@ public:
 //               max_halite_cell),
 //          m_discovery_min_clip, m_discovery_max_clip);
 //
-      reward_map_.insert({kv.first, mine_reward + deposit_reward +
+      reward_map_.insert({i, mine_reward + deposit_reward +
                                         distance_reward});
 
     }

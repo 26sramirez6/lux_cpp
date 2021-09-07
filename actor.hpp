@@ -12,6 +12,7 @@
 #include <cmath>
 #include <random>
 #include <type_traits>
+#include "actions.hpp"
 #include "replay_buffer.hpp"
 #include "feature_builder.hpp"
 #include "model_config.hpp"
@@ -24,7 +25,7 @@ override_actions_by_choice(std::true_type, RandomEngine &random_engine_,
                            const Mask &_remove_action_mask,
                            Eigen::Ref<Eigen::ArrayXi> new_random_actions_,
                            Eigen::Ref<Eigen::ArrayXi> actions_) {
-  choice(random_engine_, static_cast<int>(WorkerAction::Count) - 1,
+  choice(random_engine_, static_cast<int>(WorkerActions::Count) - 1,
          new_random_actions_);
   actions_ = _remove_action_mask.select(new_random_actions_, actions_);
 }
@@ -36,7 +37,7 @@ override_actions_by_choice(std::false_type, RandomEngine &random_engine_,
                            const Mask &_remove_action_mask,
                            Eigen::Ref<Eigen::ArrayXi> new_random_actions_,
                            Eigen::Ref<Eigen::ArrayXi> actions_) {
-  actions_ = _remove_action_mask.select(static_cast<int>(CityTileAction::NONE),
+  actions_ = _remove_action_mask.select(static_cast<int>(CityTileActions::NONE),
                                         actions_);
 }
 
@@ -82,7 +83,7 @@ static inline void override_actions_by_q(std::false_type,
                                          const Mask &_remove_action_mask,
                                          const torch::Tensor &_q_values,
                                          Eigen::Ref<Eigen::ArrayXi> actions_) {
-  actions_ = _remove_action_mask.select(static_cast<int>(CityTileAction::NONE),
+  actions_ = _remove_action_mask.select(static_cast<int>(CityTileActions::NONE),
                                         actions_);
 }
 
@@ -159,7 +160,7 @@ public:
   void updatePawnStates(const Env &_env,
                         RewardEngine &reward_engine_,
                         const torch::Tensor &_latest_actions) {
-    const auto &pawn_ids = PawnType::get_pawn_ids(_env);
+    const auto pawn_ids = PawnType::get_pawn_ids(_env);
 		const auto latest_pawn_map = PawnType::get_pawns(_env); //TODO: REMOVE
 	
 		m_latest_pawn_count = pawn_ids.size(); // don't rely on multi_step_pawn_ids
@@ -170,7 +171,7 @@ public:
 			pushLatestRewards(_env, latest_pawn_map, reward_engine_);
 			pushLatestActions(_latest_actions);
 		}
-    if (_env.m_step > m_n && m_multi_step_pawn_ids.size() == m_n) {
+    if (_env.turn > m_n && m_multi_step_pawn_ids.size() == m_n) {
       std::vector<int> nth_retained_ids_prior;
       const auto &nth_ids_prior = m_multi_step_pawn_ids.front();
       nth_retained_ids_prior.reserve(nth_ids_prior.size());
@@ -206,7 +207,7 @@ public:
       m_multi_step_pawn_ids.pop();
     }
 
-		m_one_step_prior_pawns = latest_pawn_map; 
+		m_one_step_prior_pawns = std::move(latest_pawn_map); 
   }
 
 	inline bool pushTransitions(ReplayBuf& replay_buf_) const {
@@ -231,7 +232,7 @@ public:
 	}
 
 private:
-	void inline pushLatestPawns(std::vector<int>& latest_ids_) {
+	void inline pushLatestPawns(std::vector<int> latest_ids_) {
     m_multi_step_pawn_ids.push(std::move(latest_ids_));
 	}	
 
@@ -286,9 +287,11 @@ private:
         {up_to_prior_pawn_count},
         nth_features_prior.m_geometric.index({up_to_prior_pawn_count}));
 
+		const auto& latest_features = m_multi_step_features.back();
+ 
     m_final_batch.m_next_state.m_geometric.index_put_(
         {m_retained_id_indices.index({up_to_retained})},
-        m_multi_step_features.back().m_geometric.index({up_to_retained}));
+        latest_features.m_geometric.index({up_to_retained}));
 
     // pop at end to avoid invalidating the reference
 		// only pop when queue is 1 size greater
@@ -375,7 +378,7 @@ private:
   std::queue<BatchStateFeatures> m_multi_step_features;
   std::vector<std::unordered_map<int, float>> m_multi_step_rewards;
 	
-	std::unordered_map<int, PawnType::type> m_one_step_prior_pawns;
+	std::unordered_map<int, typename PawnType::type> m_one_step_prior_pawns;
 
 	std::size_t m_latest_pawn_count;
   std::size_t m_nth_rewards_prior_cursor;
@@ -480,7 +483,7 @@ public:
         const int max_citytiles_allowed = any_citytiles ? 0 : 1;
         limit_actions_by_choice<true>(
             random_engine_, max_citytiles_allowed,
-            static_cast<int>(WorkerAction::BUILD),
+            static_cast<int>(WorkerActions::BUILD),
             m_cumsum.head(latest_worker_count),
             m_new_random_actions.head(latest_worker_count),
             m_best_worker_actions.head(latest_worker_count));
@@ -500,7 +503,7 @@ public:
 //
 //        limit_actions_by_choice<false>(
 //            random_engine_, max_workers_allowed,
-//            static_cast<int>(CityTileAction::BUILD_WORKER),
+//            static_cast<int>(CityTileActions::BUILD_WORKER),
 //            m_cumsum.head(latest_citytile_count),
 //            m_new_random_actions.head(latest_citytile_count),
 //            m_best_citytile_actions.head(latest_citytile_count));
@@ -527,7 +530,7 @@ public:
             latest_citytile_count == 0 ? 1 : 0;
 
         limit_actions_by_q<true>(
-            max_citytiles_allowed, static_cast<int>(WorkerAction::BUILD),
+            max_citytiles_allowed, static_cast<int>(WorkerActions::BUILD),
             m_cumsum.head(latest_worker_count),
             m_best_worker_actions.head(latest_worker_count), q_current);
         std::cout << "ACTOR Q current: " << std::endl;

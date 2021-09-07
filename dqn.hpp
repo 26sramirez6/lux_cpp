@@ -1,6 +1,5 @@
 #ifndef DQN_HPP
 #define DQN_HPP
-
 #include <torch/torch.h>
 
 struct LocallyConnected2DImpl : torch::nn::Module {
